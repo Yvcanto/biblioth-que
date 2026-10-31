@@ -124,6 +124,8 @@ select.sel{padding:10px 12px;border:1px solid var(--line);border-radius:8px;back
 .g-meta{font-size:13px;color:var(--muted)}
 .g-missing{font-size:12.5px;color:var(--warn)}
 .tome{font-family:var(--f-mono);font-size:12px;color:var(--muted);min-width:34px;text-align:right}
+.place-code{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);min-width:58px;text-align:right;line-height:1.3}
+.shelf{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:12px 4px 4px;border-bottom:1px solid var(--line)}
 
 .empty{padding:44px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted)}
 .empty h2{color:var(--ink);font-size:22px}
@@ -233,6 +235,7 @@ label textarea{min-height:72px;resize:vertical}
     <div class="seg" role="group" aria-label="Affichage">
       <button type="button" data-v="liste" aria-pressed="true">Liste</button>
       <button type="button" data-v="series" aria-pressed="false">Par série</button>
+      <button type="button" data-v="lieux" aria-pressed="false">Par emplacement</button>
     </div>
   </div>
 
@@ -245,14 +248,16 @@ label textarea{min-height:72px;resize:vertical}
     <label for="x-format">Format<select id="x-format" class="sel"></select></label>
     <label for="x-genre">Genre<select id="x-genre" class="sel"></select></label>
     <label for="x-editeur">Éditeur<select id="x-editeur" class="sel"></select></label>
-    <label for="x-lieu">Emplacement<select id="x-lieu" class="sel"></select></label>
+    <label for="x-piece">Pièce<select id="x-piece" class="sel"></select></label>
+    <label for="x-meuble">Meuble<select id="x-meuble" class="sel"></select></label>
+    <label for="x-etagere">Étagère<select id="x-etagere" class="sel"></select></label>
     <div class="f-actions"><button class="btn small" id="x-reset" type="button">Effacer les filtres</button></div>
   </div>
 
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 8 · 31 octobre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 9 · 31 octobre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -303,7 +308,21 @@ label textarea{min-height:72px;resize:vertical}
         </label>
         <label for="f-genre">Genre (facultatif)<input id="f-genre" list="dl-genres" placeholder="Policier, Western…"></label>
       </div>
-      <label for="f-lieu">Emplacement<input id="f-lieu" list="dl-lieux" placeholder="Salon · étagère 2"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Emplacement</legend>
+      <div class="grid2">
+        <label for="f-piece">Pièce<input id="f-piece" list="dl-pieces" placeholder="Salon"></label>
+        <label for="f-meuble">Meuble<input id="f-meuble" list="dl-meubles" placeholder="Bibliothèque blanche"></label>
+      </div>
+      <div class="grid2">
+        <label for="f-etagere">Étagère<input id="f-etagere" list="dl-etageres" placeholder="3"></label>
+        <label for="f-rang">Rang
+          <select id="f-rang"><option value="">Non précisé</option><option value="1">1 (devant)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+        </label>
+      </div>
+      <p class="hint">Numérotez les étagères de haut en bas, par exemple. Le rang 1 est celui de devant.</p>
     </fieldset>
 
     <fieldset>
@@ -389,7 +408,7 @@ label textarea{min-height:72px;resize:vertical}
 <div class="toast" id="toast" hidden></div>
 
 <datalist id="dl-series"></datalist><datalist id="dl-auteurs"></datalist><datalist id="dl-dessinateurs"></datalist>
-<datalist id="dl-editeurs"></datalist><datalist id="dl-genres"></datalist><datalist id="dl-lieux"></datalist><datalist id="dl-emprunteurs"></datalist>
+<datalist id="dl-editeurs"></datalist><datalist id="dl-genres"></datalist><datalist id="dl-pieces"></datalist><datalist id="dl-meubles"></datalist><datalist id="dl-etageres"></datalist><datalist id="dl-emprunteurs"></datalist>
 
 <script>
 "use strict";
@@ -438,8 +457,8 @@ let books = lsGet(LS_BOOKS, []);
 let cfg = lsGet(LS_CFG, null);          // {owner, repo, token}
 let remote = { sha: null, loaded: false };
 let prefs = Object.assign({ cat: "tous", stat: "tous", sort: "recent", vue: "liste" }, lsGet(LS_PREFS, {}));
-const NO_FILTERS = { note: "", de: "", a: "", format: "", genre: "", editeur: "", lieu: "" };
-prefs.f = Object.assign({}, NO_FILTERS, prefs.f || {});
+const NO_FILTERS = { note: "", de: "", a: "", format: "", genre: "", editeur: "", piece: "", meuble: "", etagere: "" };
+prefs.f = Object.assign({}, NO_FILTERS, prefs.f || {}); delete prefs.f.lieu;
 let editing = null, form = { cat: "", statut: "alire", note: 0, couverture: "" };
 let syncState = "local", lastPull = 0, queue = Promise.resolve(), pending = 0;
 
@@ -654,9 +673,9 @@ function filtered() {
     if (f.de && !(an >= +f.de)) return false;
     if (f.a && !(an <= +f.a)) return false;
     if (f.format && (f.format === "-" ? b.format : norm(b.format) !== norm(f.format))) return false;
-    for (const k of ["genre", "editeur", "lieu"]) if (f[k] && (f[k] === "-" ? (b[k] || "").trim() : norm(b[k]) !== norm(f[k]))) return false;
+    for (const k of ["genre", "editeur", "piece", "meuble", "etagere"]) if (f[k] && (f[k] === "-" ? (b[k] || "").trim() : norm(b[k]) !== norm(f[k]))) return false;
     if (!q) return true;
-    return norm([b.titre, b.auteur, b.dessinateur, b.serie, b.genre, b.isbn, b.lieu, b.editeur, b.pretA, b.format, b.notes].join(" ")).includes(q);
+    return norm([b.titre, b.auteur, b.dessinateur, b.serie, b.genre, b.isbn, b.lieu, b.piece, b.meuble, b.editeur, b.pretA, b.format, b.notes].join(" ")).includes(q);
   });
 }
 const cmpTxt = (a, b) => norm(a).localeCompare(norm(b), "fr");
@@ -677,7 +696,8 @@ function thumbHtml(b) {
   if (b.couverture) return `<span class="thumb" style="--c:${c}"><img src="${esc(b.couverture)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML='<span class=&quot;spine&quot;></span>'"></span>`;
   return `<span class="thumb" style="--c:${c}"><span class="spine"></span></span>`;
 }
-function rowHtml(b, inSeries) {
+function rowHtml(b, mode) {
+  const inSeries = mode === true, inLieux = mode === "lieux";
   const d = daysSince(b.pretLe);
   const people = [b.auteur, b.dessinateur].filter(Boolean).map(esc).join(" & ");
   const meta = [people, b.editeur && esc(b.editeur), b.annee && esc(b.annee)].filter(Boolean).join(" · ");
@@ -693,7 +713,7 @@ function rowHtml(b, inSeries) {
         ${cat && !inSeries ? `<span class="chip cat" style="--c:var(--cat-${b.cat})">${cat.label}</span>` : ""}
         ${b.format ? `<span class="chip">${esc(b.format)}</span>` : ""}
         ${b.genre ? `<span class="chip">${esc(b.genre)}</span>` : ""}
-        ${b.lieu ? `<span class="chip place">${esc(b.lieu)}</span>` : ""}
+        ${!inLieux && lieuText(b) ? `<span class="chip place">${esc(lieuText(b, true))}</span>` : ""}
       </span>
     </span>
     <span class="r-side">
@@ -705,12 +725,40 @@ function rowHtml(b, inSeries) {
 }
 const uniq = vals => { const m = new Map(); vals.forEach(v => { v = String(v || "").trim(); if (v && !m.has(norm(v))) m.set(norm(v), v); }); return [...m.values()].sort(cmpTxt); };
 const fillDl = (id, vals) => { $(id).innerHTML = uniq(vals).map(v => `<option value="${esc(v)}">`).join(""); };
+// Emplacements : meubles de la pièce saisie, étagères du meuble saisi
+function fillPlaceDl() {
+  const p = norm($("#f-piece").value), m = norm($("#f-meuble").value);
+  fillDl("#dl-pieces", books.map(b => b.piece));
+  fillDl("#dl-meubles", books.filter(b => !p || norm(b.piece) === p).map(b => b.meuble));
+  const et = books.filter(b => (!p || norm(b.piece) === p) && (!m || norm(b.meuble) === m)).map(b => b.etagere);
+  $("#dl-etageres").innerHTML = uniq(et).sort((a, b) => shelfNum(a) - shelfNum(b)).map(v => `<option value="${esc(v)}">`).join("");
+}
 // Genres : ceux de la catégorie choisie dans le formulaire (vos genres + la liste par défaut)
 function fillGenres() {
   const c = form.cat;
   const mine = books.filter(b => !c || b.cat === c).map(b => b.genre);
   fillDl("#dl-genres", mine.concat(c ? (GENRES[c] || []) : Object.values(GENRES).flat()));
 }
+/* ---- Emplacement : pièce / meuble / étagère / rang ---- */
+function ensureParts(b) {
+  if (b.piece !== undefined || b.meuble !== undefined || b.etagere !== undefined || b.rang !== undefined) return b;
+  b.piece = ""; b.meuble = ""; b.etagere = ""; b.rang = "";
+  String(b.lieu || "").split(/\s*[·|\/]\s*/).map(x => x.trim()).filter(Boolean).forEach(part => {
+    const m = part.match(/^[ée]tag[eè]re\s*(.*)$/i), r = part.match(/^rang\s*(.*)$/i);
+    if (m && !b.etagere) b.etagere = m[1] || part;
+    else if (r && !b.rang) b.rang = r[1] || part;
+    else if (!b.piece) b.piece = part;
+    else if (!b.meuble) b.meuble = part;
+  });
+  return b;
+}
+function lieuText(b, court) {
+  const e = String(b.etagere || "").trim(), r = String(b.rang || "").trim();
+  return [b.piece, b.meuble,
+    e && (court ? "Ét. " + e : (/^\d+$/.test(e) ? "Étagère " + e : e)),
+    r && (court ? "R. " + r : "Rang " + r)].map(x => String(x || "").trim()).filter(Boolean).join(" · ");
+}
+const shelfNum = v => { const n = parseFloat(String(v || "").replace(",", ".")); return isNaN(n) ? 1e9 : n; };
 function activeFilters() { return Object.values(prefs.f).filter(Boolean).length; }
 function renderFilters() {
   const opts = (id, vals, cur, none) => {
@@ -722,14 +770,18 @@ function renderFilters() {
   opts("#x-format", ["Poche", "Grand format", "Album", "Intégrale"].concat(books.map(b => b.format)), prefs.f.format, "Non précisé");
   opts("#x-genre", books.map(b => b.genre), prefs.f.genre, "Sans genre");
   opts("#x-editeur", books.map(b => b.editeur), prefs.f.editeur, "Sans éditeur");
-  opts("#x-lieu", books.map(b => b.lieu), prefs.f.lieu, "Sans emplacement");
+  const inPiece = books.filter(b => !prefs.f.piece || prefs.f.piece === "-" || norm(b.piece) === norm(prefs.f.piece));
+  const inMeuble = inPiece.filter(b => !prefs.f.meuble || prefs.f.meuble === "-" || norm(b.meuble) === norm(prefs.f.meuble));
+  opts("#x-piece", books.map(b => b.piece), prefs.f.piece, "Sans pièce");
+  opts("#x-meuble", inPiece.map(b => b.meuble), prefs.f.meuble, "Sans meuble");
+  opts("#x-etagere", inMeuble.map(b => b.etagere), prefs.f.etagere, "Sans étagère");
   $("#x-note").value = prefs.f.note; $("#x-de").value = prefs.f.de; $("#x-a").value = prefs.f.a;
   const n = activeFilters();
   $("#toggle-filters").innerHTML = "Plus de filtres" + (n ? ` <span class="n">${n}</span>` : "");
 }
 
 /* ---- Suggestions de la barre de recherche ---- */
-const SUGG_FIELDS = [["titre", "Titre"], ["serie", "Série"], ["auteur", "Auteur"], ["dessinateur", "Auteur"], ["editeur", "Éditeur"], ["genre", "Genre"], ["lieu", "Emplacement"], ["pretA", "Prêté à"]];
+const SUGG_FIELDS = [["titre", "Titre"], ["serie", "Série"], ["auteur", "Auteur"], ["dessinateur", "Auteur"], ["editeur", "Éditeur"], ["genre", "Genre"], ["piece", "Pièce"], ["meuble", "Meuble"], ["pretA", "Prêté à"]];
 let suggItems = [], suggIdx = -1;
 function buildSugg() {
   const q = norm($("#q").value), box = $("#sugg");
@@ -772,6 +824,7 @@ function render() {
   $("#f-stat").value = prefs.stat; $("#sort").value = prefs.sort;
   document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === prefs.vue));
 
+  books.forEach(ensureParts);
   renderFilters();
   const rows = filtered().sort(sorter(prefs.sort));
   const nf = activeFilters(), rc = $("#result-count");
@@ -799,6 +852,24 @@ function render() {
     }).join("") + (sorted.length && hors ? `<p class="hint">${hors} livre${hors > 1 ? "s" : ""} sans série ne figure${hors > 1 ? "nt" : ""} pas dans cette vue.</p>` : "");
     if (!sorted.length) { list.innerHTML = ""; empty.hidden = false; empty.innerHTML = books.length ? `<h2>Aucune série ici</h2><p>Renseignez le champ « Série » d'un livre pour le voir regroupé avec les autres tomes.</p>` : emptyHtml(); bindEmpty(); }
     else empty.hidden = true;
+  } else if (prefs.vue === "lieux") {
+    const groups = new Map();
+    rows.forEach(b => { const k = norm(b.piece) + "|" + norm(b.meuble); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(b); });
+    const vide = g => !g[0].piece && !g[0].meuble;
+    const sorted = [...groups.values()].sort((a, b) => vide(a) - vide(b) || cmpTxt(a[0].piece, b[0].piece) || cmpTxt(a[0].meuble, b[0].meuble));
+    list.innerHTML = sorted.map(g => {
+      g.sort((a, b) => shelfNum(a.etagere) - shelfNum(b.etagere) || cmpTxt(a.etagere, b.etagere) || shelfNum(a.rang) - shelfNum(b.rang) || cmpTxt(a.serie, b.serie) || serieOrder(a, b));
+      let last = null, inner = "";
+      g.forEach(b => {
+        const key = (b.etagere || "") + "|" + (b.rang || "");
+        if (key !== last && !vide(g)) { last = key; const lbl = [b.etagere && (/^\d+$/.test(b.etagere) ? "Étagère " + b.etagere : b.etagere), b.rang && ("Rang " + b.rang + (b.rang === "1" ? " (devant)" : ""))].filter(Boolean).join(" · "); inner += `<div class="shelf">${esc(lbl || "Étagère non précisée")}</div>`; }
+        inner += rowHtml(b, "lieux");
+      });
+      const titre = vide(g) ? "Sans emplacement" : [g[0].piece || "Pièce non précisée", g[0].meuble].filter(Boolean).map(esc).join(" — ");
+      return `<section class="group"><div class="g-head"><h3>${titre}</h3><span class="g-meta">${g.length} livre${g.length > 1 ? "s" : ""}</span></div><div class="list">${inner}</div></section>`;
+    }).join("");
+    if (!rows.length) { empty.hidden = false; empty.innerHTML = books.length ? `<h2>Aucun livre ne correspond</h2><p>Essayez un autre mot, une autre catégorie ou un autre statut.</p>` : emptyHtml(); bindEmpty(); }
+    else empty.hidden = true;
   } else {
     list.innerHTML = rows.length ? `<div class="list">${rows.map(b => rowHtml(b, false)).join("")}</div>` : "";
     if (!rows.length) { empty.hidden = false; empty.innerHTML = books.length ? `<h2>Aucun livre ne correspond</h2><p>Essayez un autre mot, une autre catégorie ou un autre statut.</p>` : emptyHtml(); bindEmpty(); }
@@ -814,13 +885,13 @@ function render() {
   const noms = books.flatMap(b => [b.auteur, b.dessinateur]).flatMap(v => String(v || "").split(/\s*,\s*/));
   fillDl("#dl-series", col("serie")); fillDl("#dl-auteurs", noms); fillDl("#dl-dessinateurs", noms);
   fillDl("#dl-editeurs", col("editeur").concat(EDITEURS));
-  fillGenres(); fillDl("#dl-lieux", col("lieu")); fillDl("#dl-emprunteurs", col("pretA"));
+  fillGenres(); fillPlaceDl(); fillDl("#dl-emprunteurs", col("pretA"));
 }
 function emptyHtml() { return `<h2>Votre bibliothèque est vide</h2><p>Ajoutez votre premier livre : saisissez ou scannez son ISBN, au dos près du code-barres, et les informations se remplissent toutes seules.</p><button class="btn primary" id="add2">+ Ajouter un livre</button>`; }
 function bindEmpty() { const a = $("#add2"); if (a) a.onclick = () => openPanel(null); }
 
 /* ================= Panneau livre ================= */
-const FIELDS = ["isbn", "titre", "serie", "tome", "auteur", "dessinateur", "editeur", "annee", "format", "genre", "lieu", "pretA", "pretLe", "notes"];
+const FIELDS = ["isbn", "titre", "serie", "tome", "auteur", "dessinateur", "editeur", "annee", "format", "genre", "piece", "meuble", "etagere", "rang", "pretA", "pretLe", "notes"];
 function setCat(c) {
   form.cat = c;
   $("#f-cat").innerHTML = Object.entries(CATS).map(([k, v]) => `<button type="button" data-v="${k}" aria-pressed="${k === c}"><span class="sw" style="--c:var(--cat-${k})"></span>${v.label}</button>`).join("");
@@ -835,7 +906,9 @@ function hint(id, cls, text) { const h = $(id); h.className = "hint" + (cls ? " 
 function openPanel(b) {
   editing = b;
   $("#p-title").textContent = b ? "Modifier le livre" : "Ajouter un livre";
+  if (b) ensureParts(b);
   FIELDS.forEach(k => $("#f-" + k).value = b ? (b[k] || "") : "");
+  fillPlaceDl();
   setCat(b ? b.cat || "" : (CATS[prefs.cat] ? prefs.cat : ""));
   setStatut(b ? b.statut || "alire" : "alire"); setNote(b ? b.note || 0 : 0); setCover(b ? b.couverture : "");
   $("#del").hidden = !b; $("#confirm").hidden = true;
@@ -855,10 +928,10 @@ function applySeriePrefill() {
   const last = same[same.length - 1];
   if (!form.cat && last.cat) setCat(last.cat);
   const got = [];
-  ["auteur", "dessinateur", "editeur", "format", "genre", "lieu"].forEach(k => { if (fillEmpty(k, last[k])) got.push(k); });
+  ["auteur", "dessinateur", "editeur", "format", "genre", "piece", "meuble", "etagere", "rang"].forEach(k => { if (fillEmpty(k, last[k])) got.push(k); });
   if (!$("#f-tome").value.trim()) { const n = Math.max(0, ...same.map(b => parseInt(b.tome, 10)).filter(n => !isNaN(n))); if (n) $("#f-tome").value = n + 1; }
   $("#f-serie").value = same[0].serie; // même orthographe que les autres tomes
-  hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série.` + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", lieu: "emplacement" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
+  hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série.` + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", piece: "pièce", meuble: "meuble", etagere: "étagère", rang: "rang" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
 }
 
 async function doLookup() {
@@ -891,6 +964,9 @@ async function save() {
   FIELDS.forEach(k => b[k] = $("#f-" + k).value.trim());
   b.isbn = cleanIsbn(b.isbn);
   if (form.cat !== "bd") b.dessinateur = "";
+  // Même orthographe que les livres existants (« salon » → « Salon »)
+  ["piece", "meuble", "editeur", "genre", "serie"].forEach(k => { const v = (b[k] || "").trim(); if (!v) return; const ex = books.find(x => x.id !== b.id && norm(x[k]) === norm(v)); if (ex) b[k] = ex[k]; });
+  b.lieu = lieuText(b);
   b.cat = form.cat; b.statut = form.statut; b.note = form.note; b.couverture = form.couverture;
   if (b.pretA && !b.pretLe) b.pretLe = today();
   if (!b.pretA) b.pretLe = "";
@@ -962,10 +1038,11 @@ function disconnect() {
 }
 
 /* ================= Export / import ================= */
-const CSV_COLS = [["titre", "Titre"], ["cat", "Catégorie"], ["serie", "Série"], ["tome", "Tome"], ["auteur", "Auteur / scénariste"], ["dessinateur", "Dessinateur"], ["editeur", "Éditeur"], ["annee", "Année"], ["format", "Format"], ["genre", "Genre"], ["isbn", "ISBN"], ["lieu", "Emplacement"], ["statut", "Statut"], ["note", "Note"], ["pretA", "Prêté à"], ["pretLe", "Prêté le"], ["notes", "Remarques"], ["couverture", "Couverture"], ["id", "id"]];
+const CSV_COLS = [["titre", "Titre"], ["cat", "Catégorie"], ["serie", "Série"], ["tome", "Tome"], ["auteur", "Auteur / scénariste"], ["dessinateur", "Dessinateur"], ["editeur", "Éditeur"], ["annee", "Année"], ["format", "Format"], ["genre", "Genre"], ["isbn", "ISBN"], ["piece", "Pièce"], ["meuble", "Meuble"], ["etagere", "Étagère"], ["rang", "Rang"], ["lieu", "Emplacement"], ["statut", "Statut"], ["note", "Note"], ["pretA", "Prêté à"], ["pretLe", "Prêté le"], ["notes", "Remarques"], ["couverture", "Couverture"], ["id", "id"]];
 function toCsv(list) {
   const cell = v => { const s = String(v ?? ""); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const lines = [CSV_COLS.map(c => c[1]).join(";")];
+  list.forEach(b => ensureParts(b));
   list.forEach(b => lines.push(CSV_COLS.map(([k]) => cell(k === "cat" ? (CATS[b.cat]?.label || b.cat) : k === "statut" ? (STATUTS[b.statut] || b.statut) : k === "isbn" && b.isbn ? "⁠" + b.isbn : b[k])).join(";")));
   return "﻿" + lines.join("\r\n");
 }
@@ -1021,6 +1098,7 @@ $("#cover-del").onclick = () => setCover("");
 $("#form").addEventListener("submit", e => { e.preventDefault(); save(); });
 $("#f-isbn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doLookup(); } });
 $("#f-serie").addEventListener("change", applySeriePrefill);
+$("#f-piece").addEventListener("input", fillPlaceDl); $("#f-meuble").addEventListener("input", fillPlaceDl);
 document.addEventListener("keydown", e => { if (e.key === "Escape") closePanels(); });
 $("#f-cat").onclick = e => { const b = e.target.closest("button"); if (b) setCat(b.dataset.v); };
 $("#f-statut").onclick = e => { const b = e.target.closest("button"); if (b) setStatut(b.dataset.v); };
@@ -1041,7 +1119,11 @@ $("#q").addEventListener("blur", () => setTimeout(closeSugg, 150));
 $("#q").addEventListener("focus", buildSugg);
 $("#sugg").addEventListener("mousedown", e => { const li = e.target.closest("li"); if (li) { e.preventDefault(); pickSugg(+li.dataset.i); } });
 $("#toggle-filters").onclick = () => { const f = $("#filters"); f.hidden = !f.hidden; $("#toggle-filters").setAttribute("aria-expanded", !f.hidden); };
-[["#x-note", "note"], ["#x-format", "format"], ["#x-genre", "genre"], ["#x-editeur", "editeur"], ["#x-lieu", "lieu"]].forEach(([id, k]) => $(id).onchange = e => { prefs.f[k] = e.target.value; savePrefs(); render(); });
+[["#x-note", "note"], ["#x-format", "format"], ["#x-genre", "genre"], ["#x-editeur", "editeur"], ["#x-piece", "piece"], ["#x-meuble", "meuble"], ["#x-etagere", "etagere"]].forEach(([id, k]) => $(id).onchange = e => {
+  prefs.f[k] = e.target.value;
+  if (k === "piece") { prefs.f.meuble = ""; prefs.f.etagere = ""; } if (k === "meuble") prefs.f.etagere = "";
+  savePrefs(); render();
+});
 [["#x-de", "de"], ["#x-a", "a"]].forEach(([id, k]) => $(id).oninput = e => { const v = e.target.value.replace(/\D/g, "").slice(0, 4); if (v.length === 4 || !v) { prefs.f[k] = v; savePrefs(); render(); } });
 $("#x-reset").onclick = () => { prefs.f = Object.assign({}, NO_FILTERS); prefs.stat = "tous"; savePrefs(); render(); };
 $("#open-settings").onclick = openSettings; $("#s-connect").onclick = connect; $("#s-disconnect").onclick = disconnect;
