@@ -77,6 +77,18 @@ select.sel{padding:10px 12px;border:1px solid var(--line);border-radius:8px;back
 .seg button+button{border-left:1px solid var(--line)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);font-weight:700}
 
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:15;margin:0;padding:6px;list-style:none;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-height:min(60vh,380px);overflow-y:auto}
+.sugg li{display:flex;align-items:baseline;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer}
+.sugg li[aria-selected="true"],.sugg li:hover{background:var(--accent-soft)}
+.sugg .k{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-width:86px}
+.sugg .v{flex:1;min-width:0;overflow-wrap:anywhere}
+.sugg .v mark{background:none;color:var(--accent);font-weight:700}
+.sugg .c{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.filters{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.filters .sel{width:100%;font-size:15px}
+.f-actions{display:flex;align-items:flex-end}
+#toggle-filters[aria-expanded="true"]{border-color:var(--ink)}
+#toggle-filters .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;font-size:11px;padding:0 7px;font-weight:700}
 .note{padding:10px 14px;border-radius:8px;font-size:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
 .note.info{background:var(--accent-soft)}
 .note.warn{background:var(--warn-soft);color:var(--warn)}
@@ -192,7 +204,8 @@ label textarea{min-height:72px;resize:vertical}
   <div class="toolbar">
     <div class="search">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" placeholder="Titre, auteur, série, ISBN, emplacement…" aria-label="Rechercher">
+      <input id="q" type="search" placeholder="Titre, auteur, série, ISBN, emplacement…" aria-label="Rechercher" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false" autocomplete="off">
+      <ul class="sugg" id="sugg" role="listbox" hidden></ul>
     </div>
     <button class="btn primary" id="add">+ Ajouter un livre</button>
   </div>
@@ -213,7 +226,9 @@ label textarea{min-height:72px;resize:vertical}
       <option value="auteur">Auteur A→Z</option>
       <option value="serie">Série puis tome</option>
       <option value="note">Mieux notés</option>
+      <option value="annee">Année (récent → ancien)</option>
     </select>
+    <button class="btn" id="toggle-filters" type="button" aria-expanded="false">Plus de filtres</button>
     <span class="spacer"></span>
     <div class="seg" role="group" aria-label="Affichage">
       <button type="button" data-v="liste" aria-pressed="true">Liste</button>
@@ -221,9 +236,23 @@ label textarea{min-height:72px;resize:vertical}
     </div>
   </div>
 
+  <div class="filters" id="filters" hidden>
+    <label for="x-note">Note
+      <select id="x-note" class="sel"><option value="">Toutes</option><option value="5">★★★★★</option><option value="4">★★★★ et plus</option><option value="3">★★★ et plus</option><option value="2">★★ et plus</option><option value="1">★ et plus</option><option value="0">Non noté</option></select>
+    </label>
+    <label for="x-de">Année de<input id="x-de" class="sel" inputmode="numeric" maxlength="4" placeholder="1950"></label>
+    <label for="x-a">à<input id="x-a" class="sel" inputmode="numeric" maxlength="4" placeholder="2026"></label>
+    <label for="x-format">Format<select id="x-format" class="sel"></select></label>
+    <label for="x-genre">Genre<select id="x-genre" class="sel"></select></label>
+    <label for="x-editeur">Éditeur<select id="x-editeur" class="sel"></select></label>
+    <label for="x-lieu">Emplacement<select id="x-lieu" class="sel"></select></label>
+    <div class="f-actions"><button class="btn small" id="x-reset" type="button">Effacer les filtres</button></div>
+  </div>
+
+  <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 7 · 31 octobre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 8 · 31 octobre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -409,6 +438,8 @@ let books = lsGet(LS_BOOKS, []);
 let cfg = lsGet(LS_CFG, null);          // {owner, repo, token}
 let remote = { sha: null, loaded: false };
 let prefs = Object.assign({ cat: "tous", stat: "tous", sort: "recent", vue: "liste" }, lsGet(LS_PREFS, {}));
+const NO_FILTERS = { note: "", de: "", a: "", format: "", genre: "", editeur: "", lieu: "" };
+prefs.f = Object.assign({}, NO_FILTERS, prefs.f || {});
 let editing = null, form = { cat: "", statut: "alire", note: 0, couverture: "" };
 let syncState = "local", lastPull = 0, queue = Promise.resolve(), pending = 0;
 
@@ -616,6 +647,14 @@ function filtered() {
     if (prefs.cat !== "tous" && b.cat !== prefs.cat) return false;
     if (prefs.stat === "pret") { if (!lent(b)) return false; }
     else if (prefs.stat !== "tous" && b.statut !== prefs.stat) return false;
+    const f = prefs.f;
+    if (f.note === "0" && b.note) return false;
+    if (f.note && f.note !== "0" && (b.note || 0) < +f.note) return false;
+    const an = parseInt(b.annee, 10);
+    if (f.de && !(an >= +f.de)) return false;
+    if (f.a && !(an <= +f.a)) return false;
+    if (f.format && (f.format === "-" ? b.format : norm(b.format) !== norm(f.format))) return false;
+    for (const k of ["genre", "editeur", "lieu"]) if (f[k] && (f[k] === "-" ? (b[k] || "").trim() : norm(b[k]) !== norm(f[k]))) return false;
     if (!q) return true;
     return norm([b.titre, b.auteur, b.dessinateur, b.serie, b.genre, b.isbn, b.lieu, b.editeur, b.pretA, b.format, b.notes].join(" ")).includes(q);
   });
@@ -629,6 +668,7 @@ function sorter(s) {
   if (s === "titre") return (a, b) => cmpTxt(a.titre, b.titre);
   if (s === "auteur") return (a, b) => cmpTxt(a.auteur, b.auteur) || cmpTxt(a.serie, b.serie) || serieOrder(a, b);
   if (s === "serie") return (a, b) => (!!b.serie - !!a.serie) || cmpTxt(a.serie, b.serie) || serieOrder(a, b);
+  if (s === "annee") return (a, b) => { const ya = yearNum(a), yb = yearNum(b); if (ya === 1e9 || yb === 1e9) return (ya === 1e9) - (yb === 1e9) || cmpTxt(a.titre, b.titre); return yb - ya || cmpTxt(a.titre, b.titre); };
   if (s === "note") return (a, b) => (b.note || 0) - (a.note || 0) || cmpTxt(a.titre, b.titre);
   return (a, b) => (b.ajoute || 0) - (a.ajoute || 0);
 }
@@ -671,6 +711,55 @@ function fillGenres() {
   const mine = books.filter(b => !c || b.cat === c).map(b => b.genre);
   fillDl("#dl-genres", mine.concat(c ? (GENRES[c] || []) : Object.values(GENRES).flat()));
 }
+function activeFilters() { return Object.values(prefs.f).filter(Boolean).length; }
+function renderFilters() {
+  const opts = (id, vals, cur, none) => {
+    const list = uniq(vals);
+    if (cur && cur !== "-" && !list.some(v => norm(v) === norm(cur))) list.unshift(cur);
+    $(id).innerHTML = `<option value="">Tous</option>` + list.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("") + `<option value="-">${none}</option>`;
+    $(id).value = cur;
+  };
+  opts("#x-format", ["Poche", "Grand format", "Album", "Intégrale"].concat(books.map(b => b.format)), prefs.f.format, "Non précisé");
+  opts("#x-genre", books.map(b => b.genre), prefs.f.genre, "Sans genre");
+  opts("#x-editeur", books.map(b => b.editeur), prefs.f.editeur, "Sans éditeur");
+  opts("#x-lieu", books.map(b => b.lieu), prefs.f.lieu, "Sans emplacement");
+  $("#x-note").value = prefs.f.note; $("#x-de").value = prefs.f.de; $("#x-a").value = prefs.f.a;
+  const n = activeFilters();
+  $("#toggle-filters").innerHTML = "Plus de filtres" + (n ? ` <span class="n">${n}</span>` : "");
+}
+
+/* ---- Suggestions de la barre de recherche ---- */
+const SUGG_FIELDS = [["titre", "Titre"], ["serie", "Série"], ["auteur", "Auteur"], ["dessinateur", "Auteur"], ["editeur", "Éditeur"], ["genre", "Genre"], ["lieu", "Emplacement"], ["pretA", "Prêté à"]];
+let suggItems = [], suggIdx = -1;
+function buildSugg() {
+  const q = norm($("#q").value), box = $("#sugg");
+  if (!q) { closeSugg(); return; }
+  const found = new Map();
+  books.forEach(b => SUGG_FIELDS.forEach(([k, label]) => {
+    const vals = k === "auteur" || k === "dessinateur" ? String(b[k] || "").split(/\s*,\s*/) : [b[k]];
+    vals.forEach(v => {
+      v = String(v || "").trim(); if (!v) return;
+      const nv = norm(v), pos = nv.indexOf(q); if (pos < 0) return;
+      const key = label + "|" + nv;
+      const cur = found.get(key) || { label, value: v, n: 0, rank: pos === 0 ? 0 : /\s/.test(nv[pos - 1]) ? 1 : 2 };
+      cur.n++; found.set(key, cur);
+    });
+  }));
+  suggItems = [...found.values()].sort((a, b) => a.rank - b.rank || b.n - a.n || cmpTxt(a.value, b.value)).slice(0, 8);
+  if (!suggItems.length) { closeSugg(); return; }
+  suggIdx = -1;
+  const hl = v => { const nv = norm(v), i = nv.indexOf(q); return i < 0 ? esc(v) : esc(v.slice(0, i)) + "<mark>" + esc(v.slice(i, i + q.length)) + "</mark>" + esc(v.slice(i + q.length)); };
+  box.innerHTML = suggItems.map((s, i) => `<li role="option" id="sg-${i}" data-i="${i}" aria-selected="false"><span class="k">${s.label}</span><span class="v">${hl(s.value)}</span><span class="c">${s.n}</span></li>`).join("");
+  box.hidden = false; $("#q").setAttribute("aria-expanded", "true");
+}
+function closeSugg() { $("#sugg").hidden = true; $("#q").setAttribute("aria-expanded", "false"); suggIdx = -1; }
+function pickSugg(i) { const s = suggItems[i]; if (!s) return; $("#q").value = s.value; closeSugg(); render(); }
+function moveSugg(d) {
+  if ($("#sugg").hidden) return;
+  suggIdx = (suggIdx + d + suggItems.length) % suggItems.length;
+  document.querySelectorAll("#sugg li").forEach((li, i) => li.setAttribute("aria-selected", i === suggIdx));
+  const el = $("#sg-" + suggIdx); if (el) { el.scrollIntoView({ block: "nearest" }); $("#q").setAttribute("aria-activedescendant", el.id); }
+}
 function render() {
   // Compteurs
   $("#c-total").textContent = books.length;
@@ -683,7 +772,11 @@ function render() {
   $("#f-stat").value = prefs.stat; $("#sort").value = prefs.sort;
   document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === prefs.vue));
 
+  renderFilters();
   const rows = filtered().sort(sorter(prefs.sort));
+  const nf = activeFilters(), rc = $("#result-count");
+  rc.hidden = !(nf || $("#q").value.trim() || prefs.cat !== "tous" || prefs.stat !== "tous") || !books.length;
+  rc.textContent = `${rows.length} livre${rows.length > 1 ? "s" : ""} sur ${books.length}`;
   const list = $("#list"), empty = $("#empty");
   if (prefs.vue === "series") {
     const groups = new Map();
@@ -937,7 +1030,20 @@ $("#cat-tabs").onclick = e => { const t = e.target.closest(".tab"); if (t) { pre
 $("#f-stat").onchange = e => { prefs.stat = e.target.value; savePrefs(); render(); };
 $("#sort").onchange = e => { prefs.sort = e.target.value; savePrefs(); render(); };
 document.querySelector(".seg").onclick = e => { const b = e.target.closest("button"); if (b) { prefs.vue = b.dataset.v; savePrefs(); render(); } };
-$("#q").oninput = render;
+$("#q").oninput = () => { render(); buildSugg(); };
+$("#q").addEventListener("keydown", e => {
+  if (e.key === "ArrowDown") { e.preventDefault(); if ($("#sugg").hidden) buildSugg(); else moveSugg(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); moveSugg(-1); }
+  else if (e.key === "Enter") { if (!$("#sugg").hidden && suggIdx >= 0) { e.preventDefault(); pickSugg(suggIdx); } else closeSugg(); }
+  else if (e.key === "Escape" && !$("#sugg").hidden) { e.stopPropagation(); closeSugg(); }
+});
+$("#q").addEventListener("blur", () => setTimeout(closeSugg, 150));
+$("#q").addEventListener("focus", buildSugg);
+$("#sugg").addEventListener("mousedown", e => { const li = e.target.closest("li"); if (li) { e.preventDefault(); pickSugg(+li.dataset.i); } });
+$("#toggle-filters").onclick = () => { const f = $("#filters"); f.hidden = !f.hidden; $("#toggle-filters").setAttribute("aria-expanded", !f.hidden); };
+[["#x-note", "note"], ["#x-format", "format"], ["#x-genre", "genre"], ["#x-editeur", "editeur"], ["#x-lieu", "lieu"]].forEach(([id, k]) => $(id).onchange = e => { prefs.f[k] = e.target.value; savePrefs(); render(); });
+[["#x-de", "de"], ["#x-a", "a"]].forEach(([id, k]) => $(id).oninput = e => { const v = e.target.value.replace(/\D/g, "").slice(0, 4); if (v.length === 4 || !v) { prefs.f[k] = v; savePrefs(); render(); } });
+$("#x-reset").onclick = () => { prefs.f = Object.assign({}, NO_FILTERS); prefs.stat = "tous"; savePrefs(); render(); };
 $("#open-settings").onclick = openSettings; $("#s-connect").onclick = connect; $("#s-disconnect").onclick = disconnect;
 $("#refresh").onclick = () => pull(false);
 $("#x-csv").onclick = () => { download(`bibliotheque-${today()}.csv`, toCsv(books.slice().sort(sorter("serie"))), "text/csv;charset=utf-8"); hint("#x-hint", "ok", `${books.length} livre(s) exportés.`); };
@@ -947,6 +1053,7 @@ $("#x-file").onchange = e => { const f = e.target.files[0]; if (f) importFile(f)
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && cfg && Date.now() - lastPull > 30000) pull(true); });
 
 /* ================= Démarrage ================= */
+if (activeFilters()) { $("#filters").hidden = false; $("#toggle-filters").setAttribute("aria-expanded", "true"); }
 setSync(cfg ? "busy" : "local", "Lecture…");
 render();
 if (cfg) pull(true);
