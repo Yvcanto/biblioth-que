@@ -1,0 +1,15 @@
+{
+  "name": "Ma Bibliothèque",
+  "short_name": "Bibliothèque",
+  "description": "Catalogue de mes livres physiques",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f5f0",
+  "theme_color": "#1d5c45",
+  "icons": [
+    { "src": "icone.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icone.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
