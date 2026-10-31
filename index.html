@@ -223,7 +223,7 @@ label textarea{min-height:72px;resize:vertical}
 
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 6 · 31 octobre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 7 · 31 octobre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -372,6 +372,12 @@ const CATS = {
   technique: { label: "Technique", pluriel: "Technique" }
 };
 const STATUTS = { alire: "À lire", encours: "En cours", lu: "Lu" };
+// Genres proposés selon la catégorie (complétez si vous voulez). Ceux que vous saisissez s'y ajoutent automatiquement.
+const GENRES = {
+  roman: ["Aventure", "Biographie", "Classique", "Essai", "Fantastique", "Fantasy", "Historique", "Horreur", "Humour", "Jeunesse", "Littérature", "Nouvelles", "Poésie", "Policier", "Romance", "Science-fiction", "Thriller", "Témoignage"],
+  bd: ["Aventure", "Comics", "Fantasy", "Historique", "Humour", "Jeunesse", "Manga", "Policier", "Roman graphique", "Science-fiction", "Western"],
+  technique: ["Art", "Bricolage", "Cuisine", "Droit", "Économie", "Histoire", "Informatique", "Jardinage", "Langues", "Musique", "Nature", "Photographie", "Santé", "Sciences", "Sport", "Voyage"]
+};
 // Éditeurs proposés d'office (complétez la liste si vous voulez). Ceux que vous saisissez s'y ajoutent automatiquement.
 const EDITEURS = ["10/18", "Actes Sud", "Albin Michel", "Babel", "Bamboo", "Belfond", "Bragelonne", "Calmann-Lévy", "Casterman", "Dargaud", "Delcourt", "Denoël", "Dunod", "Dupuis", "ENI", "Eyrolles", "Fayard", "Flammarion", "Fleuve Éditions", "Folio", "Futuropolis", "Gallimard", "Glénat", "Grasset", "Hachette", "Hugo Roman", "J'ai lu", "JC Lattès", "Julliard", "Kana", "Ki-oon", "L'Atalante", "Larousse", "Le Livre de Poche", "Le Lombard", "Le Masque", "Les Arènes", "Les Éditions de Minuit", "Marabout", "Michel Lafon", "Milady", "Payot & Rivages", "Pika", "Plon", "Pocket", "Points", "Presses de la Cité", "Rivages", "Robert Laffont", "Rue de Sèvres", "Seuil", "Soleil", "Sonatine", "Stock", "XO Éditions"];
 
@@ -657,6 +663,14 @@ function rowHtml(b, inSeries) {
     </span>
   </button>`;
 }
+const uniq = vals => { const m = new Map(); vals.forEach(v => { v = String(v || "").trim(); if (v && !m.has(norm(v))) m.set(norm(v), v); }); return [...m.values()].sort(cmpTxt); };
+const fillDl = (id, vals) => { $(id).innerHTML = uniq(vals).map(v => `<option value="${esc(v)}">`).join(""); };
+// Genres : ceux de la catégorie choisie dans le formulaire (vos genres + la liste par défaut)
+function fillGenres() {
+  const c = form.cat;
+  const mine = books.filter(b => !c || b.cat === c).map(b => b.genre);
+  fillDl("#dl-genres", mine.concat(c ? (GENRES[c] || []) : Object.values(GENRES).flat()));
+}
 function render() {
   // Compteurs
   $("#c-total").textContent = books.length;
@@ -703,13 +717,11 @@ function render() {
   else ban.hidden = true;
   // Listes d'auto-complétion
   // Listes d'auto-complétion : tout ce que vous avez déjà saisi (+ les éditeurs courants). Une nouvelle valeur s'ajoute dès que le livre est enregistré.
-  const uniq = vals => { const m = new Map(); vals.forEach(v => { v = String(v || "").trim(); if (v && !m.has(norm(v))) m.set(norm(v), v); }); return [...m.values()].sort(cmpTxt); };
-  const fillDl = (id, vals) => { $(id).innerHTML = uniq(vals).map(v => `<option value="${esc(v)}">`).join(""); };
   const col = key => books.map(b => b[key]);
   const noms = books.flatMap(b => [b.auteur, b.dessinateur]).flatMap(v => String(v || "").split(/\s*,\s*/));
   fillDl("#dl-series", col("serie")); fillDl("#dl-auteurs", noms); fillDl("#dl-dessinateurs", noms);
   fillDl("#dl-editeurs", col("editeur").concat(EDITEURS));
-  fillDl("#dl-genres", col("genre")); fillDl("#dl-lieux", col("lieu")); fillDl("#dl-emprunteurs", col("pretA"));
+  fillGenres(); fillDl("#dl-lieux", col("lieu")); fillDl("#dl-emprunteurs", col("pretA"));
 }
 function emptyHtml() { return `<h2>Votre bibliothèque est vide</h2><p>Ajoutez votre premier livre : saisissez ou scannez son ISBN, au dos près du code-barres, et les informations se remplissent toutes seules.</p><button class="btn primary" id="add2">+ Ajouter un livre</button>`; }
 function bindEmpty() { const a = $("#add2"); if (a) a.onclick = () => openPanel(null); }
@@ -721,6 +733,7 @@ function setCat(c) {
   $("#f-cat").innerHTML = Object.entries(CATS).map(([k, v]) => `<button type="button" data-v="${k}" aria-pressed="${k === c}"><span class="sw" style="--c:var(--cat-${k})"></span>${v.label}</button>`).join("");
   $("#wrap-dessinateur").hidden = c !== "bd";
   $("#lbl-auteur").textContent = c === "bd" ? "Scénariste" : "Auteur";
+  fillGenres();
 }
 function setStatut(v) { form.statut = v; document.querySelectorAll("#f-statut button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v)); }
 function setNote(n) { form.note = n; $("#f-note").innerHTML = [1, 2, 3, 4, 5].map(i => `<button type="button" data-n="${i}" class="${i <= n ? "on" : ""}" aria-label="${i} étoile${i > 1 ? "s" : ""}">★</button>`).join(""); }
