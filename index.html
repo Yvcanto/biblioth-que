@@ -242,7 +242,7 @@ label textarea{min-height:72px;resize:vertical}
         <button type="button" class="btn" id="scan" hidden>Scanner</button>
         <button type="button" class="btn primary" id="lookup">Rechercher</button>
       </div>
-      <p class="hint" id="lookup-hint">Les informations viennent de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.</p>
+      <p class="hint" id="lookup-hint">Les informations viennent de la BnF, de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.</p>
       <div class="cover-prev" id="cover-prev" hidden><img id="cover-img" alt=""><button type="button" class="btn small ghost" id="cover-del">Retirer la couverture</button></div>
     </fieldset>
 
@@ -516,11 +516,45 @@ function guessCat(text) {
   if (/computer|technolog|engineering|mathemat|science|reference|crafts|hobbies|cooking|house|garden|business|economics|medical|informatique|programm|bricolage|jardinage|cuisine|technique|manuel|transportation|architecture|law/.test(t)) return "technique";
   return "";
 }
+async function getText(url) { try { const r = await fetch(url); return r.ok ? await r.text() : null; } catch (e) { return null; } }
+/* Catalogue de la BnF (dépôt légal : couvre presque tous les livres publiés en France) */
+function bnfName(s) {
+  const base = String(s).replace(/\s*\([^)]*\)/g, "").trim();
+  const i = base.indexOf(", ");
+  return i > 0 ? base.slice(i + 2).trim() + " " + base.slice(0, i).trim() : base;
+}
+function parseBnf(xml) {
+  if (!xml) return null;
+  let doc; try { doc = new DOMParser().parseFromString(xml, "application/xml"); } catch (e) { return null; }
+  const DC = "http://purl.org/dc/elements/1.1/";
+  const all = tag => [...doc.getElementsByTagNameNS(DC, tag)].map(n => n.textContent.trim()).filter(Boolean);
+  const titles = all("title"); if (!titles.length) return null;
+  const r = { auteurs: [], dessinateurs: [] };
+  let t = titles[0].split(" / ")[0].replace(/\s*:\s*roman\s*$/i, "").trim();
+  // Les titres de série de la BnF ont la forme « Les tuniques bleues. 12, Les bleus de la marine »
+  const ms = t.match(/^(.+?)\.\s*(\d+)\s*[,.:]\s*(.+)$/);
+  if (ms) { r.serie = ms[1].trim(); r.tome = ms[2]; t = ms[3].trim(); }
+  r.titre = t.charAt(0).toUpperCase() + t.slice(1);
+  all("creator").concat(all("contributor")).forEach(c => {
+    const dot = c.lastIndexOf(". "); const role = norm(dot > 0 ? c.slice(dot + 2) : ""); const name = bnfName(dot > 0 ? c.slice(0, dot) : c);
+    if (/illustrat|dessinat/.test(role)) r.dessinateurs.push(name);
+    else if (!role || /auteur|scenariste|adaptat/.test(role)) { r.auteurs.push(name); if (/scenariste/.test(role)) r.aScenariste = true; }
+  });
+  r.editeur = (all("publisher")[0] || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+  r.annee = ((all("date")[0] || "").match(/\d{4}/) || [""])[0];
+  const fmt = all("format").join(" "); const cm = fmt.match(/(\d+)\s*cm/);
+  r.cm = cm ? +cm[1] : 0;
+  r.sujets = all("subject").join(" ") + " " + titles[0];
+  r.estBD = r.dessinateurs.length > 0 && (r.aScenariste || /bandes? dessinee/.test(norm(r.sujets + " " + all("type").join(" "))));
+  return r;
+}
 async function lookupIsbn(isbn) {
-  const [g, ol, ole] = await Promise.all([
+  const bnfQuery = encodeURIComponent(`bib.isbn all "${isbn}"`);
+  const [g, ol, ole, bx] = await Promise.all([
     getJson(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`),
     getJson(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`),
-    getJson(`https://openlibrary.org/isbn/${isbn}.json`)
+    getJson(`https://openlibrary.org/isbn/${isbn}.json`),
+    getText(`https://catalogue.bnf.fr/api/SRU?version=1.2&operation=searchRetrieve&query=${bnfQuery}&recordSchema=dublincore&maximumRecords=1`)
   ]);
   let gv = null;
   if (g && g.items && g.items.length) {
@@ -528,18 +562,22 @@ async function lookupIsbn(isbn) {
     gv = (match || (g.items.length === 1 ? g.items[0] : null))?.volumeInfo || null;
   }
   const od = ol && ol["ISBN:" + isbn];
-  if (!gv && !od && !ole) return null;
-  const r = {};
+  const bnf = parseBnf(bx);
+  if (!gv && !od && !ole && !bnf) return null;
+  const r = { sources: [bnf && "BnF", gv && "Google Books", (od || ole) && "Open Library"].filter(Boolean) };
   const rawTitle = [gv && [gv.title, gv.subtitle].filter(Boolean).join(" - "), od && [od.title, od.subtitle].filter(Boolean).join(" - "), ole && ole.title].find(Boolean) || "";
-  r.titre = rawTitle;
-  const auteurs = (gv && gv.authors) || (od && od.authors && od.authors.map(a => a.name)) || [];
+  r.titre = (bnf && bnf.titre) || rawTitle;
+  const auteurs = (bnf && bnf.auteurs.length && bnf.auteurs) || (gv && gv.authors) || (od && od.authors && od.authors.map(a => a.name)) || [];
   r.auteurs = [...new Set(auteurs.map(a => a.trim()).filter(Boolean))];
-  r.editeur = (gv && gv.publisher) || (od && od.publishers && od.publishers[0] && od.publishers[0].name) || (ole && ole.publishers && ole.publishers[0]) || "";
-  const dateStr = (gv && gv.publishedDate) || (od && od.publish_date) || (ole && ole.publish_date) || "";
+  r.dessinateurs = bnf ? [...new Set(bnf.dessinateurs)] : [];
+  r.rolesSurs = !!(bnf && (bnf.auteurs.length || bnf.dessinateurs.length));
+  r.editeur = (bnf && bnf.editeur) || (gv && gv.publisher) || (od && od.publishers && od.publishers[0] && od.publishers[0].name) || (ole && ole.publishers && ole.publishers[0]) || "";
+  const dateStr = (bnf && bnf.annee) || (gv && gv.publishedDate) || (od && od.publish_date) || (ole && ole.publish_date) || "";
   r.annee = (String(dateStr).match(/\d{4}/) || [""])[0];
   // Série
   const st = parseSerieTitle(rawTitle);
-  if (st) { r.serie = st.serie; r.tome = st.tome; if (st.titre) r.titre = st.titre; }
+  if (bnf && bnf.serie) { r.serie = bnf.serie; r.tome = bnf.tome; }
+  else if (st) { r.serie = st.serie; r.tome = st.tome; if (st.titre && !(bnf && bnf.titre)) r.titre = st.titre; }
   else if (ole && ole.series && ole.series.length) { const s = parseOlSeries(ole.series[0]); r.serie = s.serie; r.tome = s.tome; }
   // Couverture
   let cover = gv && gv.imageLinks && (gv.imageLinks.thumbnail || gv.imageLinks.smallThumbnail);
@@ -547,16 +585,16 @@ async function lookupIsbn(isbn) {
   else if (od && od.cover) cover = od.cover.medium || od.cover.small;
   r.couverture = cover || "";
   // Catégorie
-  const catText = [(gv && gv.categories || []).join(" "), (od && od.subjects || []).map(s => s.name).join(" "), (ole && ole.subjects || []).join(" ")].join(" ");
-  r.cat = guessCat(catText);
+  const catText = [(gv && gv.categories || []).join(" "), (od && od.subjects || []).map(s => s.name).join(" "), (ole && ole.subjects || []).join(" "), bnf ? bnf.sujets : ""].join(" ");
+  r.cat = bnf && bnf.estBD ? "bd" : guessCat(catText);
+  if (!r.cat && bnf && /:\s*roman\b/i.test(bnf.sujets)) r.cat = "roman";
   // Format
   const pf = norm((ole && ole.physical_format) || "");
-  if (/mass market|pocket|poche/.test(pf) || POCHE.test(r.editeur)) r.format = "Poche";
-  else if (/hardcover|relie|cartonne/.test(pf)) r.format = r.cat === "bd" ? "Album" : "Grand format";
-  else if (/paperback|broche/.test(pf)) r.format = r.cat === "bd" ? "Album" : "Grand format";
+  if (/mass market|pocket|poche/.test(pf) || POCHE.test(r.editeur) || (bnf && bnf.cm && bnf.cm <= 18 && r.cat !== "bd")) r.format = "Poche";
   else if (r.cat === "bd") r.format = "Album";
+  else if (/hardcover|relie|cartonne|paperback|broche/.test(pf) || (bnf && bnf.cm > 18)) r.format = "Grand format";
   else r.format = "";
-  if (/int[eé]grale/i.test(rawTitle)) r.format = "Intégrale";
+  if (/int[eé]grale/i.test(rawTitle + " " + r.titre)) r.format = "Intégrale";
   return r;
 }
 
@@ -686,7 +724,7 @@ function openPanel(b) {
   setCat(b ? b.cat || "" : (CATS[prefs.cat] ? prefs.cat : ""));
   setStatut(b ? b.statut || "alire" : "alire"); setNote(b ? b.note || 0 : 0); setCover(b ? b.couverture : "");
   $("#del").hidden = !b; $("#confirm").hidden = true;
-  hint("#lookup-hint", "", "Les informations viennent de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.");
+  hint("#lookup-hint", "", "Les informations viennent de la BnF, de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.");
   hint("#serie-hint", "", "");
   $("#scrim").hidden = false; $("#panel").hidden = false; $("#panel .p-body").scrollTop = 0;
   if (!b && matchMedia("(pointer:fine)").matches) setTimeout(() => $("#f-isbn").focus(), 60);
@@ -721,12 +759,13 @@ async function doLookup() {
   fillEmpty("titre", r.titre); fillEmpty("serie", r.serie); fillEmpty("tome", r.tome);
   fillEmpty("editeur", r.editeur); fillEmpty("annee", r.annee); fillEmpty("format", r.format);
   let roles = "";
-  if (form.cat === "bd" && r.auteurs.length >= 2) { fillEmpty("auteur", r.auteurs[0]); fillEmpty("dessinateur", r.auteurs.slice(1).join(", ")); roles = " Vérifiez qui est scénariste et qui est dessinateur : les bases ne le précisent pas."; }
+  if (form.cat === "bd" && r.dessinateurs.length) { fillEmpty("auteur", r.auteurs.join(", ")); fillEmpty("dessinateur", r.dessinateurs.join(", ")); }
+  else if (form.cat === "bd" && r.auteurs.length >= 2 && !r.rolesSurs) { fillEmpty("auteur", r.auteurs[0]); fillEmpty("dessinateur", r.auteurs.slice(1).join(", ")); roles = " Vérifiez qui est scénariste et qui est dessinateur : les bases ne le précisent pas."; }
   else fillEmpty("auteur", r.auteurs.join(", "));
   if (r.couverture && !form.couverture) setCover(r.couverture);
   if (r.serie) applySeriePrefill();
   const missing = [!form.cat && "la catégorie", !r.serie && form.cat === "bd" && "la série"].filter(Boolean);
-  hint("#lookup-hint", dup ? "warn" : "ok", (dup ? `Attention : « ${dup.titre} » a déjà cet ISBN dans votre bibliothèque. ` : "Informations trouvées. Vérifiez-les avant d'enregistrer.") + roles + (missing.length ? ` À compléter : ${missing.join(", ")}.` : ""));
+  hint("#lookup-hint", dup ? "warn" : "ok", (dup ? `Attention : « ${dup.titre} » a déjà cet ISBN dans votre bibliothèque. ` : `Informations trouvées (${r.sources.join(", ")}). Vérifiez-les avant d'enregistrer.`) + roles + (missing.length ? ` À compléter : ${missing.join(", ")}.` : ""));
 }
 
 async function save() {
