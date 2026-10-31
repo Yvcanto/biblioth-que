@@ -1,0 +1,894 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ma Bibliothèque</title>
+<meta name="theme-color" content="#1d5c45">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;700&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Catalogue de bibliothèque : en-tête et compteurs, onglets par catégorie, fiches en liste ou groupées par série, panneau latéral d'édition */
+:root{
+  --paper:#f6f5f0; --card:#fffefb; --ink:#1f2a24; --muted:#5f6b63; --line:#dcdcd2;
+  --accent:#1d5c45; --accent-ink:#fff; --accent-soft:#e3eee8;
+  --warn:#9a5b12; --warn-soft:#f6ead8; --danger:#a3312b; --danger-soft:#f6e1df;
+  --cat-roman:#2f5d50; --cat-bd:#a2452c; --cat-technique:#34507f;
+  --f-display:"Spectral",Georgia,"Times New Roman",serif;
+  --f-body:"Karla",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --shadow:0 1px 2px rgba(20,30,25,.06),0 6px 24px rgba(20,30,25,.1);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#141a17; --card:#1b2420; --ink:#e7ebe6; --muted:#9aa7a0; --line:#2e3a34;
+  --accent:#6fc2a0; --accent-ink:#0f1a15; --accent-soft:#1f3a30;
+  --warn:#e3a85b; --warn-soft:#3a2d1b; --danger:#ec8a83; --danger-soft:#3d2321;
+  --cat-roman:#4f9a83; --cat-bd:#cf6b4f; --cat-technique:#6c86c2;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.4);
+  color-scheme:dark;
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:calc(24px + env(safe-area-inset-top,0px)) calc(64px + env(safe-area-inset-bottom,0px))}
+[hidden]{display:none!important}
+img{max-width:100%}
+.wrap{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(28px,5vw,40px);line-height:1.1}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.ex-libris{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.counts{display:flex;gap:22px;flex-wrap:wrap}
+.count{display:flex;flex-direction:column}
+.count b{font-family:var(--f-display);font-size:26px;line-height:1;font-variant-numeric:tabular-nums}
+.count span{font-size:12px;color:var(--muted)}
+
+.syncbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;font-size:13px;color:var(--muted)}
+.sync{display:inline-flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--accent)}.dot.busy{background:var(--warn)}.dot.err{background:var(--danger)}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.search{flex:1 1 240px;min-width:0;position:relative}
+.search input{width:100%;padding:11px 14px 11px 38px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+.search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted)}
+select.sel{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);max-width:100%}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:500;text-decoration:none}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.danger{color:var(--danger);border-color:var(--danger-soft);background:transparent}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.small{padding:6px 10px;font-size:13px}
+.btn:disabled{opacity:.55;cursor:default}
+
+.tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tab{padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;cursor:pointer;font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.tab[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.tab .sw{width:8px;height:8px;border-radius:2px;background:var(--c)}
+.tab .n{font-family:var(--f-mono);font-size:11px;opacity:.75}
+.spacer{flex:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{padding:7px 12px;border:0;background:var(--card);cursor:pointer;font-size:13px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);font-weight:700}
+
+.note{padding:10px 14px;border-radius:8px;font-size:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.note.info{background:var(--accent-soft)}
+.note.warn{background:var(--warn-soft);color:var(--warn)}
+.note.err{background:var(--danger-soft);color:var(--danger)}
+
+.list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:12px 4px;border:0;border-bottom:1px solid var(--line);cursor:pointer;background:none;text-align:left;width:100%}
+.row:hover{background:var(--card)}
+.thumb{display:block;width:40px;height:58px;flex:none;position:relative}
+.thumb img{width:40px;height:58px;object-fit:cover;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.25);display:block}
+.spine{display:block;width:26px;height:58px;margin:0 7px;border-radius:2px 3px 3px 2px;background:var(--c);position:relative;box-shadow:inset -3px 0 0 rgba(0,0,0,.2),inset 2px 0 0 rgba(255,255,255,.12)}
+.spine::before,.spine::after{content:"";position:absolute;left:4px;right:6px;height:2px;background:rgba(255,255,255,.45)}
+.spine::before{top:8px}.spine::after{bottom:8px}
+.r-main{min-width:0;display:flex;flex-direction:column;gap:1px}
+.r-serie{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);letter-spacing:.02em;overflow-wrap:anywhere}
+.r-title{font-family:var(--f-display);font-size:18px;font-weight:500;line-height:1.25;overflow-wrap:anywhere}
+.r-meta{color:var(--muted);font-size:13.5px;overflow-wrap:anywhere}
+.r-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.chip{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.cat{border-color:transparent;background:var(--c);color:#fff;font-weight:700}
+.chip.place{font-family:var(--f-mono);font-size:11px}
+.r-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.status{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.st-alire{background:var(--accent-soft);color:var(--accent)}
+.st-encours{background:var(--warn-soft);color:var(--warn)}
+.st-lu{background:var(--ink);color:var(--paper)}
+.loan{font-size:12px;color:var(--danger);background:var(--danger-soft);padding:3px 10px;border-radius:999px;white-space:nowrap}
+.stars{color:var(--warn);font-size:13px;letter-spacing:1px}
+
+.group{display:flex;flex-direction:column;gap:6px;margin-bottom:22px}
+.g-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding-bottom:4px}
+.g-head h3{font-size:21px}
+.g-meta{font-size:13px;color:var(--muted)}
+.g-missing{font-size:12.5px;color:var(--warn)}
+.tome{font-family:var(--f-mono);font-size:12px;color:var(--muted);min-width:34px;text-align:right}
+
+.empty{padding:44px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted)}
+.empty h2{color:var(--ink);font-size:22px}
+.empty p{max-width:46ch;margin:0}
+
+.scrim{position:fixed;inset:0;background:rgba(10,15,12,.45);z-index:20}
+.panel{position:fixed;top:0;right:0;bottom:0;width:min(540px,100%);background:var(--paper);z-index:21;box-shadow:var(--shadow);display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
+.p-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.p-head h2{font-size:22px}
+.p-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:20px}
+.p-foot{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--line)}
+fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;min-width:0}
+legend{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;padding:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-serie{display:grid;grid-template-columns:1fr 92px;gap:12px}
+label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--muted);min-width:0}
+label input,label select,label textarea{padding:9px 11px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);font-size:16px;width:100%}
+label textarea{min-height:72px;resize:vertical}
+.isbn-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.isbn-row label{flex:1 1 180px}
+.isbn-row input{font-family:var(--f-mono);letter-spacing:.04em}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+.hint.ok{color:var(--accent)}.hint.err{color:var(--danger)}.hint.warn{color:var(--warn)}
+.cover-prev{display:flex;gap:12px;align-items:center}
+.cover-prev img{width:56px;height:80px;object-fit:cover;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.choice{display:flex;flex-wrap:wrap;gap:6px}
+.choice button{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:14px;display:inline-flex;align-items:center;gap:8px}
+.choice button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:700}
+.choice .sw{width:10px;height:10px;border-radius:2px;background:var(--c)}
+.rate{display:flex;gap:2px}
+.rate button{border:0;background:none;font-size:26px;cursor:pointer;color:var(--line);padding:0 2px;line-height:1}
+.rate button.on{color:var(--warn)}
+.confirm{background:var(--danger-soft);color:var(--danger);padding:10px 12px;border-radius:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:14px}
+.section-text{font-size:14px;color:var(--muted);margin:0;max-width:60ch}
+.section-text b{color:var(--ink)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:8px;z-index:40;font-size:14px;max-width:calc(100% - 32px)}
+
+.scanner{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:20px}
+.scanner video{width:min(100%,520px);border-radius:8px}
+.scanner p{color:#fff;margin:0;text-align:center}
+.scanner .frame{position:relative}
+.scanner .frame::after{content:"";position:absolute;left:10%;right:10%;top:45%;height:2px;background:#ff5a4a;box-shadow:0 0 8px #ff5a4a}
+
+@media (max-width:480px){
+  .grid2{grid-template-columns:1fr}
+  .row{grid-template-columns:auto minmax(0,1fr)}
+  .r-side{grid-column:2;flex-direction:row;align-items:center;flex-wrap:wrap}
+}
+@media (prefers-reduced-motion:no-preference){.panel{animation:slide .22s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="ex-libris">Ex-libris · catalogue personnel</div>
+      <h1>Ma Bibliothèque</h1>
+    </div>
+    <div class="counts">
+      <div class="count"><b id="c-total">0</b><span>livres</span></div>
+      <div class="count"><b id="c-lu">0</b><span>lus</span></div>
+      <div class="count"><b id="c-alire">0</b><span>à lire</span></div>
+      <div class="count"><b id="c-pret">0</b><span>prêtés</span></div>
+    </div>
+  </header>
+
+  <div class="syncbar">
+    <span class="sync"><span class="dot" id="sync-dot"></span><span id="sync-text">Sur cet appareil uniquement</span></span>
+    <span style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn small ghost" id="refresh" hidden>Actualiser</button>
+      <button class="btn small" id="open-settings">Synchronisation et sauvegarde</button>
+    </span>
+  </div>
+
+  <div id="banner" hidden></div>
+
+  <div class="toolbar">
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Titre, auteur, série, ISBN, emplacement…" aria-label="Rechercher">
+    </div>
+    <button class="btn primary" id="add">+ Ajouter un livre</button>
+  </div>
+
+  <div class="tabs" id="cat-tabs" role="group" aria-label="Catégorie"></div>
+
+  <div class="tabs">
+    <select id="f-stat" class="sel" aria-label="Filtrer par statut">
+      <option value="tous">Tous les statuts</option>
+      <option value="alire">À lire</option>
+      <option value="encours">En cours</option>
+      <option value="lu">Lus</option>
+      <option value="pret">Prêtés</option>
+    </select>
+    <select id="sort" class="sel" aria-label="Trier">
+      <option value="recent">Ajout récent</option>
+      <option value="titre">Titre A→Z</option>
+      <option value="auteur">Auteur A→Z</option>
+      <option value="serie">Série puis tome</option>
+      <option value="note">Mieux notés</option>
+    </select>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Affichage">
+      <button type="button" data-v="liste" aria-pressed="true">Liste</button>
+      <button type="button" data-v="series" aria-pressed="false">Par série</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+  <div class="empty" id="empty" hidden></div>
+</div>
+
+<!-- Panneau livre -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="panel" id="panel" hidden role="dialog" aria-modal="true" aria-labelledby="p-title">
+  <div class="p-head">
+    <h2 id="p-title">Ajouter un livre</h2>
+    <button class="btn ghost" id="close" aria-label="Fermer">✕</button>
+  </div>
+  <form class="p-body" id="form" autocomplete="off">
+    <fieldset>
+      <legend>ISBN</legend>
+      <div class="isbn-row">
+        <label for="f-isbn">Numéro au dos du livre
+          <input id="f-isbn" inputmode="numeric" placeholder="978-2-07-036002-4">
+        </label>
+        <button type="button" class="btn" id="scan" hidden>Scanner</button>
+        <button type="button" class="btn primary" id="lookup">Rechercher</button>
+      </div>
+      <p class="hint" id="lookup-hint">Les informations viennent de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.</p>
+      <div class="cover-prev" id="cover-prev" hidden><img id="cover-img" alt=""><button type="button" class="btn small ghost" id="cover-del">Retirer la couverture</button></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Catégorie *</legend>
+      <div class="choice" id="f-cat" role="group" aria-label="Catégorie"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Le livre</legend>
+      <label for="f-titre">Titre *<input id="f-titre"></label>
+      <div class="grid-serie">
+        <label for="f-serie">Série (facultatif)<input id="f-serie" list="dl-series" placeholder="Les Tuniques bleues"></label>
+        <label for="f-tome">Tome n°<input id="f-tome" inputmode="numeric"></label>
+      </div>
+      <p class="hint" id="serie-hint" hidden></p>
+      <div class="grid2">
+        <label for="f-auteur"><span id="lbl-auteur">Auteur</span><input id="f-auteur" list="dl-auteurs"></label>
+        <label for="f-dessinateur" id="wrap-dessinateur">Dessinateur<input id="f-dessinateur" list="dl-dessinateurs"></label>
+      </div>
+      <div class="grid2">
+        <label for="f-editeur">Éditeur / collection<input id="f-editeur" list="dl-editeurs"></label>
+        <label for="f-annee">Année<input id="f-annee" inputmode="numeric" maxlength="4"></label>
+      </div>
+      <div class="grid2">
+        <label for="f-format">Format
+          <select id="f-format"><option value="">Non précisé</option><option>Poche</option><option>Grand format</option><option>Album</option><option>Intégrale</option></select>
+        </label>
+        <label for="f-genre">Genre (facultatif)<input id="f-genre" list="dl-genres" placeholder="Policier, Western…"></label>
+      </div>
+      <label for="f-lieu">Emplacement<input id="f-lieu" list="dl-lieux" placeholder="Salon · étagère 2"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Lecture</legend>
+      <div class="choice" id="f-statut" role="group" aria-label="Statut">
+        <button type="button" data-v="alire" aria-pressed="true">À lire</button>
+        <button type="button" data-v="encours" aria-pressed="false">En cours</button>
+        <button type="button" data-v="lu" aria-pressed="false">Lu</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-size:13px;color:var(--muted)">Ma note</span>
+        <div class="rate" id="f-note" role="group" aria-label="Note sur 5"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Prêt</legend>
+      <div class="grid2">
+        <label for="f-pretA">Prêté à<input id="f-pretA" list="dl-emprunteurs" placeholder="Nom de la personne"></label>
+        <label for="f-pretLe">Depuis le<input id="f-pretLe" type="date"></label>
+      </div>
+      <p class="hint">Laissez vide si le livre est chez vous.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Remarques</legend>
+      <label for="f-notes">Notes personnelles<textarea id="f-notes" placeholder="Édition dédicacée, état, citation préférée…"></textarea></label>
+    </fieldset>
+    <div id="confirm" hidden></div>
+  </form>
+  <div class="p-foot">
+    <button class="btn danger" id="del" type="button" hidden>Supprimer</button>
+    <span class="spacer"></span>
+    <div style="display:flex;gap:10px">
+      <button class="btn" id="cancel" type="button">Annuler</button>
+      <button class="btn primary" id="save" type="button">Enregistrer</button>
+    </div>
+  </div>
+</aside>
+
+<!-- Panneau réglages -->
+<aside class="panel" id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="s-title">
+  <div class="p-head">
+    <h2 id="s-title">Synchronisation et sauvegarde</h2>
+    <button class="btn ghost" id="s-close" aria-label="Fermer">✕</button>
+  </div>
+  <div class="p-body">
+    <fieldset>
+      <legend>Synchronisation GitHub</legend>
+      <p class="section-text" id="s-status">Vos livres sont enregistrés dans un fichier de votre dépôt GitHub privé. Ils sont ainsi les mêmes sur tous vos appareils.</p>
+      <div class="grid2">
+        <label for="s-owner">Nom d'utilisateur GitHub<input id="s-owner" autocapitalize="off" spellcheck="false"></label>
+        <label for="s-repo">Dépôt privé des données<input id="s-repo" value="bibliotheque-donnees" autocapitalize="off" spellcheck="false"></label>
+      </div>
+      <label for="s-token">Jeton d'accès (fine-grained token)<input id="s-token" type="password" autocapitalize="off" spellcheck="false" placeholder="github_pat_…"></label>
+      <p class="hint">Le jeton reste uniquement dans ce navigateur. Créez-le avec l'accès au seul dépôt de données, permission « Contents : Read and write ».</p>
+      <p class="hint" id="s-hint"></p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn primary" id="s-connect" type="button">Connecter</button>
+        <button class="btn danger" id="s-disconnect" type="button" hidden>Déconnecter cet appareil</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Sauvegarde</legend>
+      <p class="section-text">L'export CSV s'ouvre dans Excel, LibreOffice ou Google Sheets. L'export JSON est une copie complète, réimportable ici.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="x-csv" type="button">Exporter en CSV</button>
+        <button class="btn" id="x-json" type="button">Exporter en JSON</button>
+        <button class="btn" id="x-import" type="button">Importer un fichier</button>
+        <input type="file" id="x-file" accept=".json,.csv,application/json,text/csv" hidden>
+      </div>
+      <p class="hint" id="x-hint"></p>
+    </fieldset>
+  </div>
+</aside>
+
+<div class="scanner" id="scanner" hidden>
+  <div class="frame"><video id="video" playsinline muted></video></div>
+  <p>Placez le code-barres du livre dans le cadre.</p>
+  <button class="btn" id="scan-stop" type="button">Annuler</button>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<datalist id="dl-series"></datalist><datalist id="dl-auteurs"></datalist><datalist id="dl-dessinateurs"></datalist>
+<datalist id="dl-editeurs"></datalist><datalist id="dl-genres"></datalist><datalist id="dl-lieux"></datalist><datalist id="dl-emprunteurs"></datalist>
+
+<script>
+"use strict";
+/* ================= Réglages modifiables ================= */
+// Pour ajouter une catégorie : une ligne ici + une couleur --cat-xxx dans le CSS.
+const CATS = {
+  roman:     { label: "Roman",     pluriel: "Romans" },
+  bd:        { label: "BD",        pluriel: "BD" },
+  technique: { label: "Technique", pluriel: "Technique" }
+};
+const STATUTS = { alire: "À lire", encours: "En cours", lu: "Lu" };
+const POCHE = /\b(folio|livre de poche|poche|pocket|j'?ai lu|10\s*\/\s*18|points|babel|gf|garnier[- ]flammarion|librio|le masque|bragelonne poche|milady|press(e)?s? pocket)\b/i;
+const FILE_PATH = "bibliotheque.json";
+const LS_BOOKS = "biblio-livres", LS_CFG = "biblio-github", LS_PREFS = "biblio-prefs";
+
+/* ================= Outils ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const norm = s => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const today = () => new Date().toISOString().slice(0, 10);
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+function toast(t) { const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => el.hidden = true, 3200); }
+function daysSince(d) { if (!d) return null; const n = Math.floor((Date.now() - new Date(d + "T12:00:00").getTime()) / 864e5); return n < 0 ? 0 : n; }
+function cleanIsbn(s) { return String(s || "").toUpperCase().replace(/[^0-9X]/g, ""); }
+function isbnValid(i) {
+  if (/^\d{13}$/.test(i)) { let s = 0; for (let k = 0; k < 12; k++) s += +i[k] * (k % 2 ? 3 : 1); return (10 - s % 10) % 10 === +i[12]; }
+  if (/^\d{9}[\dX]$/.test(i)) { let s = 0; for (let k = 0; k < 10; k++) s += (i[k] === "X" ? 10 : +i[k]) * (10 - k); return s % 11 === 0; }
+  return false;
+}
+function utf8ToB64(str) { const bytes = new TextEncoder().encode(str); let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin); }
+function b64ToUtf8(b64) { const bin = atob(String(b64).replace(/\s/g, "")); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
+
+/* ================= État ================= */
+let books = lsGet(LS_BOOKS, []);
+let cfg = lsGet(LS_CFG, null);          // {owner, repo, token}
+let remote = { sha: null, loaded: false };
+let prefs = Object.assign({ cat: "tous", stat: "tous", sort: "recent", vue: "liste" }, lsGet(LS_PREFS, {}));
+let editing = null, form = { cat: "", statut: "alire", note: 0, couverture: "" };
+let syncState = "local", lastPull = 0, queue = Promise.resolve(), pending = 0;
+
+/* ================= GitHub ================= */
+function ghHeaders(extra) { return Object.assign({ Authorization: "Bearer " + cfg.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, extra || {}); }
+function ghUrl(path) { return `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}${path || ""}`; }
+function ghError(status) {
+  if (status === 401) return "Jeton refusé : il est invalide ou expiré. Créez-en un nouveau sur GitHub.";
+  if (status === 403) return "Accès refusé : vérifiez que le jeton a la permission « Contents : Read and write » sur ce dépôt.";
+  if (status === 404) return "Dépôt introuvable : vérifiez le nom d'utilisateur, le nom du dépôt, et que le jeton y a accès.";
+  return "GitHub ne répond pas correctement (erreur " + status + "). Réessayez dans un instant.";
+}
+async function ghCheckRepo() {
+  const r = await fetch(ghUrl(""), { headers: ghHeaders(), cache: "no-store" });
+  if (!r.ok) throw new Error(ghError(r.status));
+  const j = await r.json();
+  return j;
+}
+async function ghPull() {
+  const r = await fetch(ghUrl("/contents/" + FILE_PATH), { headers: ghHeaders(), cache: "no-store" });
+  if (r.status === 404) return { sha: null, livres: [] };
+  if (!r.ok) throw new Error(ghError(r.status));
+  const j = await r.json();
+  let text;
+  if (j.encoding === "base64" && j.content) text = b64ToUtf8(j.content);
+  else { // fichier de plus de 1 Mo : lecture brute
+    const raw = await fetch(ghUrl("/contents/" + FILE_PATH), { headers: ghHeaders({ Accept: "application/vnd.github.raw+json" }), cache: "no-store" });
+    if (!raw.ok) throw new Error(ghError(raw.status));
+    text = await raw.text();
+  }
+  let data; try { data = JSON.parse(text); } catch (e) { throw new Error("Le fichier " + FILE_PATH + " du dépôt est illisible. Restaurez une version précédente depuis GitHub."); }
+  return { sha: j.sha, livres: Array.isArray(data) ? data : (data.livres || []) };
+}
+async function ghPush(livres, sha, message) {
+  const body = { message, content: utf8ToB64(JSON.stringify({ format: "ma-bibliotheque", version: 1, livres }, null, 1)) };
+  if (sha) body.sha = sha;
+  const r = await fetch(ghUrl("/contents/" + FILE_PATH), { method: "PUT", headers: ghHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
+  if (r.status === 409 || r.status === 422) { const e = new Error("conflict"); e.conflict = true; throw e; }
+  if (!r.ok) throw new Error(ghError(r.status));
+  const j = await r.json();
+  return j.content.sha;
+}
+
+/* Applique une modification : immédiatement à l'écran, puis sur GitHub (avec relecture si le fichier a changé ailleurs). */
+function mutate(op, message) {
+  books = op(books.slice()); saveLocal(); render();
+  if (!cfg) return Promise.resolve(true);
+  pending++; setSync("busy");
+  const p = queue.then(async () => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        if (!remote.loaded) { const d = await ghPull(); remote = { sha: d.sha, loaded: true, livres: d.livres }; }
+        const next = op(remote.livres.slice());
+        const sha = await ghPush(next, remote.sha, message);
+        remote = { sha, loaded: true, livres: next };
+        return true;
+      } catch (e) {
+        if (e.conflict) { remote.loaded = false; continue; }
+        throw e;
+      }
+    }
+    throw new Error("Le fichier change trop souvent ailleurs. Réessayez dans un instant.");
+  });
+  queue = p.then(() => {}, () => {});
+  return p.then(ok => {
+    pending--;
+    if (!pending) { books = remote.livres.slice(); saveLocal(); render(); lastPull = Date.now(); setSync("ok"); }
+    return ok;
+  }, err => {
+    pending--; setSync("err", err.message); toast(err.message);
+    remote.loaded = false;
+    return false;
+  });
+}
+const upsert = b => list => { const i = list.findIndex(x => x.id === b.id); if (i >= 0) list[i] = b; else list.push(b); return list; };
+const remove = id => list => list.filter(x => x.id !== id);
+const mergeIn = items => list => { const byId = new Map(list.map(b => [b.id, b])); items.forEach(b => { const cur = byId.get(b.id); if (!cur || (b.modifie || 0) >= (cur.modifie || 0)) byId.set(b.id, b); }); return [...byId.values()]; };
+
+async function pull(silent) {
+  if (!cfg || pending) return;
+  setSync("busy", "Lecture…");
+  try {
+    const d = await ghPull();
+    remote = { sha: d.sha, loaded: true, livres: d.livres };
+    books = d.livres.slice(); saveLocal(); render(); lastPull = Date.now(); setSync("ok");
+  } catch (e) { setSync("err", e.message); if (!silent) toast(e.message); }
+}
+function saveLocal() { lsSet(LS_BOOKS, books); }
+function setSync(state, msg) {
+  syncState = state;
+  const dot = $("#sync-dot"), t = $("#sync-text");
+  dot.className = "dot " + (state === "ok" ? "ok" : state === "busy" ? "busy" : state === "err" ? "err" : "");
+  $("#refresh").hidden = !cfg;
+  if (!cfg) t.textContent = "Sur cet appareil uniquement";
+  else if (state === "busy") t.textContent = msg || "Enregistrement sur GitHub…";
+  else if (state === "err") t.textContent = "Synchronisation en échec : " + (msg || "");
+  else t.textContent = "Synchronisé avec GitHub (" + cfg.repo + ")";
+}
+
+/* ================= Recherche ISBN ================= */
+async function getJson(url) { try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+function parseSerieTitle(title) {
+  // « Les Tuniques bleues - Tome 12 - Les Bleus de la marine » → série, tome, titre
+  const m = String(title || "").match(/^(.+?)\s*[-–—:,(]\s*(?:tome|t\.|vol\.?|volume|n°|no\.?)\s*(\d+)\s*\)?\s*(?:[-–—:.]\s*(.+))?$/i);
+  return m ? { serie: m[1].trim(), tome: m[2], titre: (m[3] || "").trim() } : null;
+}
+function parseOlSeries(s) {
+  const m = String(s || "").match(/^(.+?)\s*(?:[;,#]|--|\b(?:tome|t\.|vol\.?|n°)\s*)\s*(\d+)\s*$/i);
+  return m ? { serie: m[1].replace(/[;,\s]+$/, "").trim(), tome: m[2] } : { serie: String(s || "").trim(), tome: "" };
+}
+function guessCat(text) {
+  const t = norm(text);
+  if (/comic|graphic novel|bande(s)? dessinee|\bbd\b|manga/.test(t)) return "bd";
+  if (/fiction|roman|novel|literature|litterature|poetry|drama|thriller|polar|detective/.test(t)) return "roman";
+  if (/computer|technolog|engineering|mathemat|science|reference|crafts|hobbies|cooking|house|garden|business|economics|medical|informatique|programm|bricolage|jardinage|cuisine|technique|manuel|transportation|architecture|law/.test(t)) return "technique";
+  return "";
+}
+async function lookupIsbn(isbn) {
+  const [g, ol, ole] = await Promise.all([
+    getJson(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`),
+    getJson(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`),
+    getJson(`https://openlibrary.org/isbn/${isbn}.json`)
+  ]);
+  let gv = null;
+  if (g && g.items && g.items.length) {
+    const match = g.items.find(it => (it.volumeInfo.industryIdentifiers || []).some(x => cleanIsbn(x.identifier) === isbn));
+    gv = (match || (g.items.length === 1 ? g.items[0] : null))?.volumeInfo || null;
+  }
+  const od = ol && ol["ISBN:" + isbn];
+  if (!gv && !od && !ole) return null;
+  const r = {};
+  const rawTitle = [gv && [gv.title, gv.subtitle].filter(Boolean).join(" - "), od && [od.title, od.subtitle].filter(Boolean).join(" - "), ole && ole.title].find(Boolean) || "";
+  r.titre = rawTitle;
+  const auteurs = (gv && gv.authors) || (od && od.authors && od.authors.map(a => a.name)) || [];
+  r.auteurs = [...new Set(auteurs.map(a => a.trim()).filter(Boolean))];
+  r.editeur = (gv && gv.publisher) || (od && od.publishers && od.publishers[0] && od.publishers[0].name) || (ole && ole.publishers && ole.publishers[0]) || "";
+  const dateStr = (gv && gv.publishedDate) || (od && od.publish_date) || (ole && ole.publish_date) || "";
+  r.annee = (String(dateStr).match(/\d{4}/) || [""])[0];
+  // Série
+  const st = parseSerieTitle(rawTitle);
+  if (st) { r.serie = st.serie; r.tome = st.tome; if (st.titre) r.titre = st.titre; }
+  else if (ole && ole.series && ole.series.length) { const s = parseOlSeries(ole.series[0]); r.serie = s.serie; r.tome = s.tome; }
+  // Couverture
+  let cover = gv && gv.imageLinks && (gv.imageLinks.thumbnail || gv.imageLinks.smallThumbnail);
+  if (cover) cover = cover.replace(/^http:/, "https:").replace("&edge=curl", "");
+  else if (od && od.cover) cover = od.cover.medium || od.cover.small;
+  r.couverture = cover || "";
+  // Catégorie
+  const catText = [(gv && gv.categories || []).join(" "), (od && od.subjects || []).map(s => s.name).join(" "), (ole && ole.subjects || []).join(" ")].join(" ");
+  r.cat = guessCat(catText);
+  // Format
+  const pf = norm((ole && ole.physical_format) || "");
+  if (/mass market|pocket|poche/.test(pf) || POCHE.test(r.editeur)) r.format = "Poche";
+  else if (/hardcover|relie|cartonne/.test(pf)) r.format = r.cat === "bd" ? "Album" : "Grand format";
+  else if (/paperback|broche/.test(pf)) r.format = r.cat === "bd" ? "Album" : "Grand format";
+  else if (r.cat === "bd") r.format = "Album";
+  else r.format = "";
+  if (/int[eé]grale/i.test(rawTitle)) r.format = "Intégrale";
+  return r;
+}
+
+/* ================= Affichage ================= */
+const lent = b => !!(b.pretA && b.pretA.trim());
+function filtered() {
+  const q = norm($("#q").value);
+  return books.filter(b => {
+    if (prefs.cat !== "tous" && b.cat !== prefs.cat) return false;
+    if (prefs.stat === "pret") { if (!lent(b)) return false; }
+    else if (prefs.stat !== "tous" && b.statut !== prefs.stat) return false;
+    if (!q) return true;
+    return norm([b.titre, b.auteur, b.dessinateur, b.serie, b.genre, b.isbn, b.lieu, b.editeur, b.pretA, b.format, b.notes].join(" ")).includes(q);
+  });
+}
+const cmpTxt = (a, b) => norm(a).localeCompare(norm(b), "fr");
+const tomeNum = b => { const n = parseFloat(String(b.tome || "").replace(",", ".")); return isNaN(n) ? 1e9 : n; };
+const yearNum = b => { const n = parseInt(b.annee, 10); return isNaN(n) ? 1e9 : n; };
+// Ordre dans une série : tome, sinon année de parution, sinon titre
+const serieOrder = (a, b) => tomeNum(a) - tomeNum(b) || yearNum(a) - yearNum(b) || cmpTxt(a.titre, b.titre);
+function sorter(s) {
+  if (s === "titre") return (a, b) => cmpTxt(a.titre, b.titre);
+  if (s === "auteur") return (a, b) => cmpTxt(a.auteur, b.auteur) || cmpTxt(a.serie, b.serie) || serieOrder(a, b);
+  if (s === "serie") return (a, b) => (!!b.serie - !!a.serie) || cmpTxt(a.serie, b.serie) || serieOrder(a, b);
+  if (s === "note") return (a, b) => (b.note || 0) - (a.note || 0) || cmpTxt(a.titre, b.titre);
+  return (a, b) => (b.ajoute || 0) - (a.ajoute || 0);
+}
+function thumbHtml(b) {
+  const c = `var(--cat-${CATS[b.cat] ? b.cat : "roman"})`;
+  if (b.couverture) return `<span class="thumb" style="--c:${c}"><img src="${esc(b.couverture)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML='<span class=&quot;spine&quot;></span>'"></span>`;
+  return `<span class="thumb" style="--c:${c}"><span class="spine"></span></span>`;
+}
+function rowHtml(b, inSeries) {
+  const d = daysSince(b.pretLe);
+  const people = [b.auteur, b.dessinateur].filter(Boolean).map(esc).join(" & ");
+  const meta = [people, b.editeur && esc(b.editeur), b.annee && esc(b.annee)].filter(Boolean).join(" · ");
+  const cat = CATS[b.cat];
+  const serie = !inSeries && b.serie ? `<span class="r-serie">${esc(b.serie)}${b.tome ? " · tome " + esc(b.tome) : ""}</span>` : "";
+  return `<button class="row" data-id="${esc(b.id)}">
+    ${inSeries ? `<span class="tome" title="${b.tome ? "Tome" : "Année de parution"}">${b.tome ? "T." + esc(b.tome) : b.annee ? esc(b.annee) : "–"}</span>` : thumbHtml(b)}
+    <span class="r-main">
+      ${serie}
+      <span class="r-title">${esc(b.titre)}</span>
+      ${meta ? `<span class="r-meta">${meta}</span>` : ""}
+      <span class="r-tags">
+        ${cat && !inSeries ? `<span class="chip cat" style="--c:var(--cat-${b.cat})">${cat.label}</span>` : ""}
+        ${b.format ? `<span class="chip">${esc(b.format)}</span>` : ""}
+        ${b.genre ? `<span class="chip">${esc(b.genre)}</span>` : ""}
+        ${b.lieu ? `<span class="chip place">${esc(b.lieu)}</span>` : ""}
+      </span>
+    </span>
+    <span class="r-side">
+      <span class="status st-${esc(b.statut)}">${STATUTS[b.statut] || ""}</span>
+      ${lent(b) ? `<span class="loan">Chez ${esc(b.pretA)}${d != null ? " · " + d + " j" : ""}</span>` : ""}
+      ${b.note ? `<span class="stars" aria-label="${b.note} sur 5">${"★".repeat(b.note)}</span>` : ""}
+    </span>
+  </button>`;
+}
+function render() {
+  // Compteurs
+  $("#c-total").textContent = books.length;
+  $("#c-lu").textContent = books.filter(b => b.statut === "lu").length;
+  $("#c-alire").textContent = books.filter(b => b.statut === "alire").length;
+  $("#c-pret").textContent = books.filter(lent).length;
+  // Onglets catégories
+  const tabs = [["tous", "Tous", books.length, ""]].concat(Object.entries(CATS).map(([k, v]) => [k, v.pluriel, books.filter(b => b.cat === k).length, `var(--cat-${k})`]));
+  $("#cat-tabs").innerHTML = tabs.map(([k, l, n, c]) => `<button class="tab" data-c="${k}" aria-pressed="${prefs.cat === k}">${c ? `<span class="sw" style="--c:${c}"></span>` : ""}${l}<span class="n">${n}</span></button>`).join("");
+  $("#f-stat").value = prefs.stat; $("#sort").value = prefs.sort;
+  document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === prefs.vue));
+
+  const rows = filtered().sort(sorter(prefs.sort));
+  const list = $("#list"), empty = $("#empty");
+  if (prefs.vue === "series") {
+    const groups = new Map();
+    rows.filter(b => b.serie).forEach(b => { const k = norm(b.serie); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(b); });
+    const sorted = [...groups.values()].sort((a, b) => cmpTxt(a[0].serie, b[0].serie));
+    const hors = rows.filter(b => !b.serie).length;
+    list.innerHTML = sorted.map(g => {
+      g.sort(serieOrder);
+      const nums = g.map(b => parseInt(b.tome, 10)).filter(n => !isNaN(n));
+      let manque = "";
+      if (nums.length >= 2) { const set = new Set(nums), max = Math.max(...nums), miss = []; for (let i = 1; i <= max; i++) if (!set.has(i)) miss.push(i); if (miss.length && miss.length <= 12) manque = `Manquants : ${miss.join(", ")}`; else if (miss.length) manque = `${miss.length} tomes manquants jusqu'au T.${max}`; }
+      const cat = CATS[g[0].cat];
+      const lus = g.filter(b => b.statut === "lu").length;
+      return `<section class="group">
+        <div class="g-head"><h3>${esc(g[0].serie)}</h3>
+          <span class="g-meta">${cat ? cat.label + " · " : ""}${g.length} livre${g.length > 1 ? "s" : ""} · ${lus} lu${lus > 1 ? "s" : ""}</span>
+          ${manque ? `<span class="g-missing">${manque}</span>` : ""}</div>
+        <div class="list">${g.map(b => rowHtml(b, true)).join("")}</div>
+      </section>`;
+    }).join("") + (sorted.length && hors ? `<p class="hint">${hors} livre${hors > 1 ? "s" : ""} sans série ne figure${hors > 1 ? "nt" : ""} pas dans cette vue.</p>` : "");
+    if (!sorted.length) { list.innerHTML = ""; empty.hidden = false; empty.innerHTML = books.length ? `<h2>Aucune série ici</h2><p>Renseignez le champ « Série » d'un livre pour le voir regroupé avec les autres tomes.</p>` : emptyHtml(); bindEmpty(); }
+    else empty.hidden = true;
+  } else {
+    list.innerHTML = rows.length ? `<div class="list">${rows.map(b => rowHtml(b, false)).join("")}</div>` : "";
+    if (!rows.length) { empty.hidden = false; empty.innerHTML = books.length ? `<h2>Aucun livre ne correspond</h2><p>Essayez un autre mot, une autre catégorie ou un autre statut.</p>` : emptyHtml(); bindEmpty(); }
+    else empty.hidden = true;
+  }
+  // Bandeau
+  const ban = $("#banner");
+  if (!cfg && books.length >= 1) { ban.hidden = false; ban.className = "note warn"; ban.innerHTML = `<span>Vos livres sont enregistrés seulement dans ce navigateur. Connectez GitHub pour les retrouver sur tous vos appareils.</span><button class="btn small" id="ban-sync">Connecter GitHub</button>`; $("#ban-sync").onclick = openSettings; }
+  else ban.hidden = true;
+  // Listes d'auto-complétion
+  const fillDl = (id, key) => { $(id).innerHTML = [...new Set(books.map(b => (b[key] || "").trim()).filter(Boolean))].sort(cmpTxt).map(v => `<option value="${esc(v)}">`).join(""); };
+  fillDl("#dl-series", "serie"); fillDl("#dl-auteurs", "auteur"); fillDl("#dl-dessinateurs", "dessinateur"); fillDl("#dl-editeurs", "editeur");
+  fillDl("#dl-genres", "genre"); fillDl("#dl-lieux", "lieu"); fillDl("#dl-emprunteurs", "pretA");
+}
+function emptyHtml() { return `<h2>Votre bibliothèque est vide</h2><p>Ajoutez votre premier livre : saisissez ou scannez son ISBN, au dos près du code-barres, et les informations se remplissent toutes seules.</p><button class="btn primary" id="add2">+ Ajouter un livre</button>`; }
+function bindEmpty() { const a = $("#add2"); if (a) a.onclick = () => openPanel(null); }
+
+/* ================= Panneau livre ================= */
+const FIELDS = ["isbn", "titre", "serie", "tome", "auteur", "dessinateur", "editeur", "annee", "format", "genre", "lieu", "pretA", "pretLe", "notes"];
+function setCat(c) {
+  form.cat = c;
+  $("#f-cat").innerHTML = Object.entries(CATS).map(([k, v]) => `<button type="button" data-v="${k}" aria-pressed="${k === c}"><span class="sw" style="--c:var(--cat-${k})"></span>${v.label}</button>`).join("");
+  $("#wrap-dessinateur").hidden = c !== "bd";
+  $("#lbl-auteur").textContent = c === "bd" ? "Scénariste" : "Auteur";
+}
+function setStatut(v) { form.statut = v; document.querySelectorAll("#f-statut button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v)); }
+function setNote(n) { form.note = n; $("#f-note").innerHTML = [1, 2, 3, 4, 5].map(i => `<button type="button" data-n="${i}" class="${i <= n ? "on" : ""}" aria-label="${i} étoile${i > 1 ? "s" : ""}">★</button>`).join(""); }
+function setCover(u) { form.couverture = u || ""; $("#cover-prev").hidden = !u; if (u) $("#cover-img").src = u; }
+function hint(id, cls, text) { const h = $(id); h.className = "hint" + (cls ? " " + cls : ""); h.textContent = text; h.hidden = !text; }
+function openPanel(b) {
+  editing = b;
+  $("#p-title").textContent = b ? "Modifier le livre" : "Ajouter un livre";
+  FIELDS.forEach(k => $("#f-" + k).value = b ? (b[k] || "") : "");
+  setCat(b ? b.cat || "" : (CATS[prefs.cat] ? prefs.cat : ""));
+  setStatut(b ? b.statut || "alire" : "alire"); setNote(b ? b.note || 0 : 0); setCover(b ? b.couverture : "");
+  $("#del").hidden = !b; $("#confirm").hidden = true;
+  hint("#lookup-hint", "", "Les informations viennent de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.");
+  hint("#serie-hint", "", "");
+  $("#scrim").hidden = false; $("#panel").hidden = false; $("#panel .p-body").scrollTop = 0;
+  if (!b && matchMedia("(pointer:fine)").matches) setTimeout(() => $("#f-isbn").focus(), 60);
+}
+function closePanels() { $("#scrim").hidden = true; $("#panel").hidden = true; $("#settings").hidden = true; editing = null; stopScan(); }
+function fillEmpty(k, v) { const el = $("#f-" + k); if (v && !el.value.trim()) { el.value = v; return true; } return false; }
+
+function applySeriePrefill() {
+  const s = norm($("#f-serie").value);
+  if (!s) { hint("#serie-hint", "", ""); return; }
+  const same = books.filter(b => norm(b.serie) === s && (!editing || b.id !== editing.id)).sort(serieOrder);
+  if (!same.length) { hint("#serie-hint", "", ""); return; }
+  const last = same[same.length - 1];
+  if (!form.cat && last.cat) setCat(last.cat);
+  const got = [];
+  ["auteur", "dessinateur", "editeur", "format", "genre", "lieu"].forEach(k => { if (fillEmpty(k, last[k])) got.push(k); });
+  if (!$("#f-tome").value.trim()) { const n = Math.max(0, ...same.map(b => parseInt(b.tome, 10)).filter(n => !isNaN(n))); if (n) $("#f-tome").value = n + 1; }
+  $("#f-serie").value = same[0].serie; // même orthographe que les autres tomes
+  hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série.` + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", lieu: "emplacement" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
+}
+
+async function doLookup() {
+  const isbn = cleanIsbn($("#f-isbn").value);
+  if (!isbnValid(isbn)) { hint("#lookup-hint", "err", "Ce numéro n'est pas un ISBN valide (10 ou 13 chiffres). Vérifiez-le au dos du livre."); return; }
+  const dup = books.find(b => cleanIsbn(b.isbn) === isbn && (!editing || b.id !== editing.id));
+  const btn = $("#lookup"); btn.disabled = true; hint("#lookup-hint", "", "Recherche…");
+  const r = await lookupIsbn(isbn);
+  btn.disabled = false;
+  $("#f-isbn").value = isbn;
+  if (!r || !r.titre) { hint("#lookup-hint", "warn", "Livre introuvable dans les bases en ligne (fréquent pour les livres anciens ou rares). Remplissez les champs à la main." + (dup ? ` Attention : « ${dup.titre} » a déjà cet ISBN.` : "")); return; }
+  if (!form.cat && r.cat) setCat(r.cat);
+  fillEmpty("titre", r.titre); fillEmpty("serie", r.serie); fillEmpty("tome", r.tome);
+  fillEmpty("editeur", r.editeur); fillEmpty("annee", r.annee); fillEmpty("format", r.format);
+  let roles = "";
+  if (form.cat === "bd" && r.auteurs.length >= 2) { fillEmpty("auteur", r.auteurs[0]); fillEmpty("dessinateur", r.auteurs.slice(1).join(", ")); roles = " Vérifiez qui est scénariste et qui est dessinateur : les bases ne le précisent pas."; }
+  else fillEmpty("auteur", r.auteurs.join(", "));
+  if (r.couverture && !form.couverture) setCover(r.couverture);
+  if (r.serie) applySeriePrefill();
+  const missing = [!form.cat && "la catégorie", !r.serie && form.cat === "bd" && "la série"].filter(Boolean);
+  hint("#lookup-hint", dup ? "warn" : "ok", (dup ? `Attention : « ${dup.titre} » a déjà cet ISBN dans votre bibliothèque. ` : "Informations trouvées. Vérifiez-les avant d'enregistrer.") + roles + (missing.length ? ` À compléter : ${missing.join(", ")}.` : ""));
+}
+
+async function save() {
+  const titre = $("#f-titre").value.trim();
+  if (!form.cat) { toast("Choisissez une catégorie : Roman, BD ou Technique."); $("#f-cat").scrollIntoView({ block: "center" }); return; }
+  if (!titre) { toast("Indiquez au moins le titre."); $("#f-titre").focus(); return; }
+  const b = editing ? Object.assign({}, editing) : { id: uid(), ajoute: Date.now() };
+  FIELDS.forEach(k => b[k] = $("#f-" + k).value.trim());
+  b.isbn = cleanIsbn(b.isbn);
+  if (form.cat !== "bd") b.dessinateur = "";
+  b.cat = form.cat; b.statut = form.statut; b.note = form.note; b.couverture = form.couverture;
+  if (b.pretA && !b.pretLe) b.pretLe = today();
+  if (!b.pretA) b.pretLe = "";
+  b.modifie = Date.now();
+  const was = !!editing; closePanels();
+  const ok = await mutate(upsert(b), (was ? "Modifie : " : "Ajoute : ") + b.titre);
+  if (ok) toast(was ? "Livre modifié" : "Livre ajouté");
+}
+function askDelete() {
+  const c = $("#confirm"); c.hidden = false;
+  c.innerHTML = `<div class="confirm"><span>Supprimer « ${esc(editing.titre)} » ?</span><button class="btn danger" type="button" id="del-yes">Oui, supprimer</button><button class="btn ghost" type="button" id="del-no">Garder</button></div>`;
+  $("#del-no").onclick = () => c.hidden = true;
+  $("#del-yes").onclick = async () => { const b = editing; closePanels(); if (await mutate(remove(b.id), "Supprime : " + b.titre)) toast("Livre supprimé"); };
+  c.scrollIntoView({ block: "center" });
+}
+
+/* ================= Scanner (Chrome Android, Edge…) ================= */
+let scanStream = null, scanTimer = null;
+async function startScan() {
+  try {
+    const det = new BarcodeDetector({ formats: ["ean_13"] });
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    const v = $("#video"); v.srcObject = scanStream; await v.play();
+    $("#scanner").hidden = false;
+    const tick = async () => {
+      if (!scanStream) return;
+      try { const codes = await det.detect(v); const c = codes.find(x => /^97[89]\d{10}$/.test(x.rawValue)); if (c) { stopScan(); $("#f-isbn").value = c.rawValue; if (navigator.vibrate) navigator.vibrate(60); doLookup(); return; } } catch (e) {}
+      scanTimer = setTimeout(tick, 250);
+    };
+    tick();
+  } catch (e) { stopScan(); toast("Caméra inaccessible : autorisez-la dans votre navigateur, ou saisissez l'ISBN à la main."); }
+}
+function stopScan() { clearTimeout(scanTimer); if (scanStream) scanStream.getTracks().forEach(t => t.stop()); scanStream = null; $("#scanner").hidden = true; }
+$("#scan").hidden = !("BarcodeDetector" in window && navigator.mediaDevices);
+
+/* ================= Réglages ================= */
+function openSettings() {
+  $("#s-owner").value = cfg ? cfg.owner : ""; $("#s-repo").value = cfg ? cfg.repo : "bibliotheque-donnees"; $("#s-token").value = cfg ? cfg.token : "";
+  $("#s-disconnect").hidden = !cfg; $("#s-connect").textContent = cfg ? "Mettre à jour" : "Connecter";
+  hint("#s-hint", "", ""); hint("#x-hint", "", "");
+  $("#s-status").innerHTML = cfg ? `Connecté au dépôt <b>${esc(cfg.owner)}/${esc(cfg.repo)}</b>. Chaque modification y est enregistrée, avec son historique.` : "Pour l'instant, vos livres sont enregistrés dans ce navigateur seulement. Connectez votre dépôt GitHub privé pour les retrouver sur tous vos appareils.";
+  $("#scrim").hidden = false; $("#settings").hidden = false;
+}
+async function connect() {
+  const c = { owner: $("#s-owner").value.trim().replace(/^@/, ""), repo: $("#s-repo").value.trim(), token: $("#s-token").value.trim() };
+  if (!c.owner || !c.repo || !c.token) { hint("#s-hint", "err", "Remplissez les trois champs."); return; }
+  const prev = cfg; cfg = c;
+  const btn = $("#s-connect"); btn.disabled = true; hint("#s-hint", "", "Connexion à GitHub…");
+  try {
+    const repo = await ghCheckRepo();
+    if (!repo.private) { hint("#s-hint", "warn", "Attention : ce dépôt est public, tout le monde pourrait voir vos livres. Rendez-le privé dans ses réglages GitHub, puis reconnectez."); cfg = prev; btn.disabled = false; return; }
+    const d = await ghPull();
+    remote = { sha: d.sha, loaded: true, livres: d.livres };
+    lsSet(LS_CFG, cfg);
+    const localOnly = prev ? [] : books.filter(b => !d.livres.some(x => x.id === b.id));
+    if (localOnly.length) { await mutate(mergeIn(localOnly), `Import de ${localOnly.length} livre(s) depuis un appareil`); hint("#s-hint", "ok", `Connecté. ${localOnly.length} livre(s) de cet appareil ont été ajoutés au dépôt.`); }
+    else { books = d.livres.slice(); saveLocal(); render(); setSync("ok"); hint("#s-hint", "ok", `Connecté. ${d.livres.length} livre(s) trouvés dans le dépôt.`); }
+    lastPull = Date.now();
+    $("#s-disconnect").hidden = false; btn.textContent = "Mettre à jour";
+    $("#s-status").innerHTML = `Connecté au dépôt <b>${esc(cfg.owner)}/${esc(cfg.repo)}</b>.`;
+  } catch (e) { cfg = prev; hint("#s-hint", "err", e.message); }
+  btn.disabled = false;
+}
+function disconnect() {
+  if (!$("#s-disconnect").dataset.confirm) { $("#s-disconnect").dataset.confirm = "1"; $("#s-disconnect").textContent = "Confirmer la déconnexion"; hint("#s-hint", "warn", "Le jeton sera effacé de ce navigateur. Vos livres restent dans le dépôt GitHub."); return; }
+  delete $("#s-disconnect").dataset.confirm; $("#s-disconnect").textContent = "Déconnecter cet appareil";
+  cfg = null; remote = { sha: null, loaded: false }; try { localStorage.removeItem(LS_CFG); } catch (e) {}
+  setSync("local"); render(); openSettings(); hint("#s-hint", "ok", "Appareil déconnecté.");
+}
+
+/* ================= Export / import ================= */
+const CSV_COLS = [["titre", "Titre"], ["cat", "Catégorie"], ["serie", "Série"], ["tome", "Tome"], ["auteur", "Auteur / scénariste"], ["dessinateur", "Dessinateur"], ["editeur", "Éditeur"], ["annee", "Année"], ["format", "Format"], ["genre", "Genre"], ["isbn", "ISBN"], ["lieu", "Emplacement"], ["statut", "Statut"], ["note", "Note"], ["pretA", "Prêté à"], ["pretLe", "Prêté le"], ["notes", "Remarques"], ["couverture", "Couverture"], ["id", "id"]];
+function toCsv(list) {
+  const cell = v => { const s = String(v ?? ""); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [CSV_COLS.map(c => c[1]).join(";")];
+  list.forEach(b => lines.push(CSV_COLS.map(([k]) => cell(k === "cat" ? (CATS[b.cat]?.label || b.cat) : k === "statut" ? (STATUTS[b.statut] || b.statut) : k === "isbn" && b.isbn ? "⁠" + b.isbn : b[k])).join(";")));
+  return "﻿" + lines.join("\r\n");
+}
+function parseCsv(text) {
+  text = text.replace(/^﻿/, "");
+  const sep = (text.split(/\r?\n/)[0].match(/;/g) || []).length >= (text.split(/\r?\n/)[0].match(/,/g) || []).length ? ";" : ",";
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === sep) { row.push(cur); cur = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cur); rows.push(row); row = []; cur = ""; }
+    else cur += ch;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  const head = rows.shift().map(h => norm(h));
+  const keyFor = h => { const c = CSV_COLS.find(([k, l]) => norm(l) === h || norm(k) === h); return c ? c[0] : (h === "auteur" ? "auteur" : null); };
+  const keys = head.map(keyFor);
+  const catBy = Object.fromEntries(Object.entries(CATS).flatMap(([k, v]) => [[norm(v.label), k], [norm(v.pluriel), k], [k, k]]));
+  const statBy = Object.fromEntries(Object.entries(STATUTS).flatMap(([k, v]) => [[norm(v), k], [k, k], [norm(v) + "s", k]]));
+  return rows.filter(r => r.some(c => c.trim())).map(r => {
+    const b = {}; keys.forEach((k, i) => { if (k) b[k] = (r[i] || "").replace(/⁠/g, "").trim(); });
+    b.cat = catBy[norm(b.cat)] || ""; b.statut = statBy[norm(b.statut)] || "alire"; b.note = Math.max(0, Math.min(5, parseInt(b.note, 10) || 0));
+    return b;
+  });
+}
+function download(name, text, type) {
+  const blob = new Blob([text], { type }); const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+async function importFile(file) {
+  const text = await file.text(); let items;
+  try {
+    if (/\.json$/i.test(file.name) || /^\s*[\[{]/.test(text)) { const d = JSON.parse(text); items = Array.isArray(d) ? d : d.livres; }
+    else items = parseCsv(text);
+    if (!Array.isArray(items)) throw 0;
+  } catch (e) { hint("#x-hint", "err", "Fichier illisible. Importez un fichier exporté depuis cette page (CSV ou JSON)."); return; }
+  const now = Date.now();
+  items = items.filter(b => b && b.titre).map((b, i) => Object.assign({ statut: "alire", note: 0 }, b, { id: b.id || uid(), ajoute: b.ajoute || now - i, modifie: b.modifie || now }));
+  if (!items.length) { hint("#x-hint", "err", "Aucun livre trouvé dans ce fichier."); return; }
+  const ok = await mutate(mergeIn(items), `Import de ${items.length} livre(s)`);
+  hint("#x-hint", ok ? "ok" : "err", ok ? `${items.length} livre(s) importés. Ceux qui existaient déjà ont été mis à jour.` : "Import non enregistré sur GitHub.");
+}
+
+/* ================= Événements ================= */
+function savePrefs() { lsSet(LS_PREFS, prefs); }
+$("#add").onclick = () => openPanel(null);
+$("#close").onclick = closePanels; $("#cancel").onclick = closePanels; $("#scrim").onclick = closePanels; $("#s-close").onclick = closePanels;
+$("#save").onclick = save; $("#del").onclick = askDelete; $("#lookup").onclick = doLookup; $("#scan").onclick = startScan; $("#scan-stop").onclick = stopScan;
+$("#cover-del").onclick = () => setCover("");
+$("#form").addEventListener("submit", e => { e.preventDefault(); save(); });
+$("#f-isbn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doLookup(); } });
+$("#f-serie").addEventListener("change", applySeriePrefill);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closePanels(); });
+$("#f-cat").onclick = e => { const b = e.target.closest("button"); if (b) setCat(b.dataset.v); };
+$("#f-statut").onclick = e => { const b = e.target.closest("button"); if (b) setStatut(b.dataset.v); };
+$("#f-note").onclick = e => { const b = e.target.closest("button"); if (b) { const n = +b.dataset.n; setNote(n === form.note ? 0 : n); } };
+$("#list").onclick = e => { const r = e.target.closest(".row"); if (r) { const b = books.find(x => x.id === r.dataset.id); if (b) openPanel(b); } };
+$("#cat-tabs").onclick = e => { const t = e.target.closest(".tab"); if (t) { prefs.cat = t.dataset.c; savePrefs(); render(); } };
+$("#f-stat").onchange = e => { prefs.stat = e.target.value; savePrefs(); render(); };
+$("#sort").onchange = e => { prefs.sort = e.target.value; savePrefs(); render(); };
+document.querySelector(".seg").onclick = e => { const b = e.target.closest("button"); if (b) { prefs.vue = b.dataset.v; savePrefs(); render(); } };
+$("#q").oninput = render;
+$("#open-settings").onclick = openSettings; $("#s-connect").onclick = connect; $("#s-disconnect").onclick = disconnect;
+$("#refresh").onclick = () => pull(false);
+$("#x-csv").onclick = () => { download(`bibliotheque-${today()}.csv`, toCsv(books.slice().sort(sorter("serie"))), "text/csv;charset=utf-8"); hint("#x-hint", "ok", `${books.length} livre(s) exportés.`); };
+$("#x-json").onclick = () => { download(`bibliotheque-${today()}.json`, JSON.stringify({ format: "ma-bibliotheque", version: 1, livres: books }, null, 1), "application/json"); hint("#x-hint", "ok", `${books.length} livre(s) exportés.`); };
+$("#x-import").onclick = () => $("#x-file").click();
+$("#x-file").onchange = e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = ""; };
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && cfg && Date.now() - lastPull > 30000) pull(true); });
+
+/* ================= Démarrage ================= */
+setSync(cfg ? "busy" : "local", "Lecture…");
+render();
+if (cfg) pull(true);
+</script>
+</body>
+</html>
