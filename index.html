@@ -371,6 +371,9 @@ const CATS = {
   technique: { label: "Technique", pluriel: "Technique" }
 };
 const STATUTS = { alire: "À lire", encours: "En cours", lu: "Lu" };
+// Éditeurs proposés d'office (complétez la liste si vous voulez). Ceux que vous saisissez s'y ajoutent automatiquement.
+const EDITEURS = ["10/18", "Actes Sud", "Albin Michel", "Babel", "Bamboo", "Belfond", "Bragelonne", "Calmann-Lévy", "Casterman", "Dargaud", "Delcourt", "Denoël", "Dunod", "Dupuis", "ENI", "Eyrolles", "Fayard", "Flammarion", "Fleuve Éditions", "Folio", "Futuropolis", "Gallimard", "Glénat", "Grasset", "Hachette", "Hugo Roman", "J'ai lu", "JC Lattès", "Julliard", "Kana", "Ki-oon", "L'Atalante", "Larousse", "Le Livre de Poche", "Le Lombard", "Le Masque", "Les Arènes", "Les Éditions de Minuit", "Marabout", "Michel Lafon", "Milady", "Payot & Rivages", "Pika", "Plon", "Pocket", "Points", "Presses de la Cité", "Rivages", "Robert Laffont", "Rue de Sèvres", "Seuil", "Soleil", "Sonatine", "Stock", "XO Éditions"];
+
 const POCHE = /\b(folio|livre de poche|poche|pocket|j'?ai lu|10\s*\/\s*18|points|babel|gf|garnier[- ]flammarion|librio|le masque|bragelonne poche|milady|press(e)?s? pocket)\b/i;
 const FILE_PATH = "bibliotheque.json";
 const LS_BOOKS = "biblio-livres", LS_CFG = "biblio-github", LS_PREFS = "biblio-prefs";
@@ -698,9 +701,14 @@ function render() {
   if (!cfg && books.length >= 1) { ban.hidden = false; ban.className = "note warn"; ban.innerHTML = `<span>Vos livres sont enregistrés seulement dans ce navigateur. Connectez GitHub pour les retrouver sur tous vos appareils.</span><button class="btn small" id="ban-sync">Connecter GitHub</button>`; $("#ban-sync").onclick = openSettings; }
   else ban.hidden = true;
   // Listes d'auto-complétion
-  const fillDl = (id, key) => { $(id).innerHTML = [...new Set(books.map(b => (b[key] || "").trim()).filter(Boolean))].sort(cmpTxt).map(v => `<option value="${esc(v)}">`).join(""); };
-  fillDl("#dl-series", "serie"); fillDl("#dl-auteurs", "auteur"); fillDl("#dl-dessinateurs", "dessinateur"); fillDl("#dl-editeurs", "editeur");
-  fillDl("#dl-genres", "genre"); fillDl("#dl-lieux", "lieu"); fillDl("#dl-emprunteurs", "pretA");
+  // Listes d'auto-complétion : tout ce que vous avez déjà saisi (+ les éditeurs courants). Une nouvelle valeur s'ajoute dès que le livre est enregistré.
+  const uniq = vals => { const m = new Map(); vals.forEach(v => { v = String(v || "").trim(); if (v && !m.has(norm(v))) m.set(norm(v), v); }); return [...m.values()].sort(cmpTxt); };
+  const fillDl = (id, vals) => { $(id).innerHTML = uniq(vals).map(v => `<option value="${esc(v)}">`).join(""); };
+  const col = key => books.map(b => b[key]);
+  const noms = books.flatMap(b => [b.auteur, b.dessinateur]).flatMap(v => String(v || "").split(/\s*,\s*/));
+  fillDl("#dl-series", col("serie")); fillDl("#dl-auteurs", noms); fillDl("#dl-dessinateurs", noms);
+  fillDl("#dl-editeurs", col("editeur").concat(EDITEURS));
+  fillDl("#dl-genres", col("genre")); fillDl("#dl-lieux", col("lieu")); fillDl("#dl-emprunteurs", col("pretA"));
 }
 function emptyHtml() { return `<h2>Votre bibliothèque est vide</h2><p>Ajoutez votre premier livre : saisissez ou scannez son ISBN, au dos près du code-barres, et les informations se remplissent toutes seules.</p><button class="btn primary" id="add2">+ Ajouter un livre</button>`; }
 function bindEmpty() { const a = $("#add2"); if (a) a.onclick = () => openPanel(null); }
