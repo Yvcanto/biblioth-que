@@ -103,6 +103,9 @@ select.sel{padding:10px 12px;border:1px solid var(--line);border-radius:8px;back
 .tag{display:inline-flex;align-items:center;gap:2px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:2px 4px 2px 10px;font-size:13px;font-weight:500}
 .tag button{border:0;background:none;color:inherit;cursor:pointer;font-size:15px;line-height:1;padding:2px 6px;border-radius:999px}
 .tag button:hover{background:rgba(0,0,0,.08)}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:-4px}
+.quick button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;color:var(--ink)}
+.quick button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .chip.kw{border-color:transparent;background:var(--accent-soft);color:var(--accent)}
 #toggle-filters[aria-expanded="true"]{border-color:var(--ink)}
 #toggle-filters .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;font-size:11px;padding:0 7px;font-weight:700}
@@ -284,7 +287,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 20 · 2 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 21 · 2 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -360,6 +363,7 @@ label textarea{min-height:72px;resize:vertical}
         </label>
         <label for="f-genre">Genre (facultatif)<input id="f-genre" list="dl-genres" placeholder="Policier, Western…"></label>
       </div>
+      <div class="quick" id="genre-quick" hidden></div>
       <p class="hint ok" id="genre-hint" hidden></p>
     </fieldset>
 
@@ -865,10 +869,22 @@ function fillPlaceDl() {
   $("#dl-etageres").innerHTML = uniq(et).sort((a, b) => shelfNum(a) - shelfNum(b)).map(v => `<option value="${esc(v)}">`).join("");
 }
 // Genres : ceux de la catégorie choisie dans le formulaire (vos genres + la liste par défaut)
+// Genres classés du plus utilisé au moins utilisé (pour la catégorie choisie), puis la liste par défaut
+function genresByUse() {
+  const c = form.cat, counts = new Map();
+  books.filter(b => b.genre && (!c || b.cat === c)).forEach(b => { const k = norm(b.genre); const e = counts.get(k) || { v: b.genre.trim(), n: 0 }; e.n++; counts.set(k, e); });
+  const used = [...counts.values()].sort((a, b) => b.n - a.n || cmpTxt(a.v, b.v));
+  const defaults = (c ? (GENRES[c] || []) : Object.values(GENRES).flat()).filter(g => !counts.has(norm(g)));
+  return { used, all: used.map(e => e.v).concat(uniq(defaults)) };
+}
 function fillGenres() {
-  const c = form.cat;
-  const mine = books.filter(b => !c || b.cat === c).map(b => b.genre);
-  fillDl("#dl-genres", mine.concat(c ? (GENRES[c] || []) : Object.values(GENRES).flat()));
+  const { used, all } = genresByUse();
+  // La liste déroulante garde cet ordre (les plus utilisés en premier)
+  $("#dl-genres").innerHTML = all.map(v => `<option value="${esc(v)}">`).join("");
+  // Raccourcis toujours visibles : les 8 genres que vous utilisez le plus
+  const cur = norm($("#f-genre").value), top = used.slice(0, 8);
+  $("#genre-quick").hidden = !top.length;
+  $("#genre-quick").innerHTML = top.map(e => `<button type="button" data-g="${esc(e.v)}" aria-pressed="${norm(e.v) === cur}">${esc(e.v)}</button>`).join("");
 }
 /* ---- Emplacement : pièce / meuble / étagère / rang ---- */
 function ensureParts(b) {
@@ -1090,6 +1106,7 @@ function openPanel(b) {
   if (b) ensureParts(b);
   FIELDS.forEach(k => $("#f-" + k).value = b ? (b[k] || "") : "");
   delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true;
+  fillGenres();
   form.mots = b ? tagsOf(b).slice() : []; $("#f-tag").value = ""; renderTagChips();
   fillPlaceDl();
   setCat(b ? b.cat || "" : (CATS[prefs.cat] ? prefs.cat : ""));
@@ -1142,7 +1159,7 @@ function applyAuthorGenre() {
     .forEach(b => { const k = norm(b.genre); const e = counts.get(k) || { v: b.genre, n: 0 }; e.n++; counts.set(k, e); total++; });
   if (!total) { if (g.dataset.auto) { g.value = ""; delete g.dataset.auto; } h.hidden = true; return; }
   const best = [...counts.values()].reduce((a, b) => b.n > a.n ? b : a);
-  g.value = best.v; g.dataset.auto = "1";
+  g.value = best.v; g.dataset.auto = "1"; fillGenres();
   h.textContent = `Genre repris des autres livres de cet auteur (${best.n} sur ${total}). Changez-le si ce livre fait exception.`;
   h.hidden = false;
 }
@@ -1548,7 +1565,13 @@ $("#f-isbn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preve
 $("#f-serie").addEventListener("change", applySeriePrefill);
 $("#f-auteur").addEventListener("change", () => { applyAuthorCat(); applyAuthorGenre(); });
 $("#f-genre").addEventListener("change", () => { if (!form.cat) applyAuthorCat(); });
-$("#f-genre").addEventListener("input", () => { delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true; });
+$("#f-genre").addEventListener("input", () => { delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true; fillGenres(); });
+$("#genre-quick").onclick = e => {
+  const b = e.target.closest("button[data-g]"); if (!b) return;
+  const g = $("#f-genre"); g.value = norm(g.value) === norm(b.dataset.g) ? "" : b.dataset.g; // retoucher le même genre l'enlève
+  delete g.dataset.auto; $("#genre-hint").hidden = true; fillGenres();
+  if (!form.cat) applyAuthorCat();
+};
 $("#f-piece").addEventListener("input", fillPlaceDl); $("#f-meuble").addEventListener("input", fillPlaceDl);
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (!$("#ocr-cam").hidden) stopOcrCam(); else if (!$("#scanner").hidden) stopScan(); else closePanels(); });
 $("#f-cat").onclick = e => { const b = e.target.closest("button"); if (b) { setCat(b.dataset.v); form.catAuto = false; form.catFromIsbn = false; $("#cat-hint").hidden = true; } };
