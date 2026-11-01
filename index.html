@@ -260,7 +260,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 11 · 1er novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 12 · 1er novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -916,7 +916,7 @@ function hint(id, cls, text) { const h = $(id); h.className = "hint" + (cls ? " 
 function openPanel(b) {
   editing = b;
   $("#p-title").textContent = b ? "Modifier le livre" : "Ajouter un livre";
-  filledByLookup = null;
+  filledByLookup = null; applySeriePrefill.got = null;
   if (b) ensureParts(b);
   FIELDS.forEach(k => $("#f-" + k).value = b ? (b[k] || "") : "");
   fillPlaceDl();
@@ -949,10 +949,13 @@ function applySeriePrefill() {
   const last = same[same.length - 1];
   if (!form.cat && last.cat) setCat(last.cat);
   const got = [];
-  ["auteur", "dessinateur", "editeur", "format", "genre", "piece", "meuble", "etagere", "rang"].forEach(k => { if (fillEmpty(k, last[k])) got.push(k); });
-  if (!$("#f-tome").value.trim()) { const n = Math.max(0, ...same.map(b => parseInt(b.tome, 10)).filter(n => !isNaN(n))); if (n) $("#f-tome").value = n + 1; }
+  // Champs repris du dernier tome (le message reste juste même si l'événement se déclenche deux fois)
+  ["auteur", "dessinateur", "editeur", "format", "genre", "piece", "meuble", "etagere", "rang"].forEach(k => { if (fillEmpty(k, last[k]) || (last[k] && $("#f-" + k).value === last[k] && applySeriePrefill.got && applySeriePrefill.got.includes(k))) got.push(k); });
+  applySeriePrefill.got = got;
+  // Le numéro de tome n'est jamais rempli automatiquement : on rappelle seulement ceux déjà saisis
+  const tomes = same.map(b => parseInt(b.tome, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
   $("#f-serie").value = same[0].serie; // même orthographe que les autres tomes
-  hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série.` + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", piece: "pièce", meuble: "meuble", etagere: "étagère", rang: "rang" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
+  hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série` + (tomes.length ? ` (tome${tomes.length > 1 ? "s" : ""} ${tomes.length > 15 ? tomes.slice(0, 15).join(", ") + "…" : tomes.join(", ")})` : "") + "." + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", piece: "pièce", meuble: "meuble", etagere: "étagère", rang: "rang" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
 }
 
 async function doLookup() {
