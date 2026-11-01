@@ -154,8 +154,11 @@ label textarea{min-height:72px;resize:vertical}
 .isbn-row input{font-family:var(--f-mono);letter-spacing:.04em}
 .hint{font-size:12.5px;color:var(--muted);margin:0}
 .hint.ok{color:var(--accent)}.hint.err{color:var(--danger)}.hint.warn{color:var(--warn)}
-.cover-prev{display:flex;gap:12px;align-items:center}
-.cover-prev img{width:56px;height:80px;object-fit:cover;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.cover-prev{display:flex;gap:14px;align-items:center}
+.cover-box{flex:none;width:72px;height:104px;border-radius:3px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--card)}
+.cover-box img{width:100%;height:100%;object-fit:cover;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.cover-empty{font-size:11px;color:var(--muted);text-align:center;padding:4px}
+.cover-actions{display:flex;flex-wrap:wrap;gap:6px}
 .choice{display:flex;flex-wrap:wrap;gap:6px}
 .choice button{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:14px;display:inline-flex;align-items:center;gap:8px}
 .choice button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:700}
@@ -173,6 +176,7 @@ label textarea{min-height:72px;resize:vertical}
 .scanner p{color:#fff;margin:0;text-align:center}
 .scanner .frame{position:relative}
 .scanner .ocr-frame::after{display:none}
+#ocr-cam.cover-mode .band{display:none}
 .scanner .band{position:absolute;left:5%;right:5%;top:35%;height:30%;border:2px solid #ff5a4a;border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
 .scanner .ocr-frame{overflow:hidden;border-radius:8px}
 .scanner .frame::after{content:"";position:absolute;left:10%;right:10%;top:45%;height:2px;background:#ff5a4a;box-shadow:0 0 8px #ff5a4a}
@@ -264,7 +268,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 14 · 1er novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 15 · 1er novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -287,7 +291,24 @@ label textarea{min-height:72px;resize:vertical}
         <button type="button" class="btn primary" id="lookup">Rechercher</button>
       </div>
       <p class="hint" id="lookup-hint">Les informations viennent de la BnF, de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.</p>
-      <div class="cover-prev" id="cover-prev" hidden><img id="cover-img" alt=""><button type="button" class="btn small ghost" id="cover-del">Retirer la couverture</button></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Couverture</legend>
+      <div class="cover-prev">
+        <span class="cover-box" id="cover-box"><img id="cover-img" alt="" hidden><span class="cover-empty" id="cover-empty">Pas de couverture</span></span>
+        <div class="cover-actions">
+          <button type="button" class="btn small" id="cover-cam">Photographier</button>
+          <button type="button" class="btn small" id="cover-pick">Choisir une image</button>
+          <button type="button" class="btn small" id="cover-url-btn">Coller une adresse</button>
+          <button type="button" class="btn small ghost" id="cover-del" hidden>Retirer</button>
+        </div>
+      </div>
+      <div class="isbn-row" id="cover-url-row" hidden>
+        <label for="cover-url">Adresse de l'image (appui long ou clic droit sur l'image → « Copier l'adresse de l'image »)<input id="cover-url" inputmode="url" placeholder="https://…"></label>
+        <button type="button" class="btn" id="cover-url-ok">Utiliser</button>
+      </div>
+      <input type="file" id="cover-file" accept="image/*" hidden>
     </fieldset>
 
     <fieldset>
@@ -410,7 +431,7 @@ label textarea{min-height:72px;resize:vertical}
 
 <div class="scanner" id="ocr-cam" hidden>
   <div class="frame ocr-frame"><video id="ocr-video" playsinline muted></video><div class="band" aria-hidden="true"></div></div>
-  <p>Cadrez la ligne « ISBN … » dans le rectangle, assez près pour que les chiffres soient nets.</p>
+  <p id="ocr-msg">Cadrez la ligne « ISBN … » dans le rectangle, assez près pour que les chiffres soient nets.</p>
   <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
     <button class="btn primary" id="ocr-shot" type="button">Prendre la photo</button>
     <button class="btn" id="ocr-gallery" type="button">Choisir une image</button>
@@ -515,6 +536,54 @@ async function ghPull() {
   }
   let data; try { data = JSON.parse(text); } catch (e) { throw new Error("Le fichier " + FILE_PATH + " du dépôt est illisible. Restaurez une version précédente depuis GitHub."); }
   return { sha: j.sha, livres: Array.isArray(data) ? data : (data.livres || []) };
+}
+/* Couvertures ajoutées à la main : un petit fichier JPEG par livre dans le dossier « couvertures » du dépôt privé */
+async function ghPutFile(path, b64, message) {
+  const r = await fetch(ghUrl("/contents/" + path), { method: "PUT", headers: ghHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ message, content: b64 }) });
+  if (!r.ok) throw new Error(ghError(r.status));
+}
+async function ghDeleteFile(path, message) {
+  try {
+    const r = await fetch(ghUrl("/contents/" + path), { headers: ghHeaders(), cache: "no-store" });
+    if (!r.ok) return;
+    const j = await r.json();
+    await fetch(ghUrl("/contents/" + path), { method: "DELETE", headers: ghHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ message, sha: j.sha }) });
+  } catch (e) {}
+}
+const coverUrls = new Map(); // chemin → adresse affichable (blob:)
+async function ghCoverUrl(path) {
+  if (coverUrls.has(path)) return coverUrls.get(path);
+  const p = (async () => {
+    let blob = null;
+    try { const c = await caches.open("biblio-couvertures"); const hit = await c.match("https://couvertures.local/" + path); if (hit) blob = await hit.blob(); } catch (e) {}
+    if (!blob) {
+      if (!cfg) return "";
+      const r = await fetch(ghUrl("/contents/" + path), { headers: ghHeaders({ Accept: "application/vnd.github.raw+json" }), cache: "no-store" });
+      if (!r.ok) return "";
+      blob = await r.blob();
+      try { const c = await caches.open("biblio-couvertures"); await c.put("https://couvertures.local/" + path, new Response(blob, { headers: { "Content-Type": "image/jpeg" } })); } catch (e) {}
+    }
+    return URL.createObjectURL(blob);
+  })();
+  coverUrls.set(path, p);
+  const u = await p; if (!u) coverUrls.delete(path);
+  return u;
+}
+const isGhCover = u => /^gh:/.test(u || "");
+async function coverSrc(u) { return isGhCover(u) ? await ghCoverUrl(u.slice(3)) : (u || ""); }
+// Remplit les images des couvertures stockées sur GitHub après l'affichage de la liste
+let hydrating = 0;
+function hydrateCovers() {
+  const run = ++hydrating;
+  const imgs = [...document.querySelectorAll("img[data-gh]")];
+  let i = 0;
+  const next = async () => {
+    while (i < imgs.length && run === hydrating) {
+      const img = imgs[i++]; const u = await ghCoverUrl(img.dataset.gh);
+      if (u) { img.src = u; img.removeAttribute("data-gh"); } else img.parentNode.innerHTML = '<span class="spine"></span>';
+    }
+  };
+  for (let k = 0; k < 4; k++) next();
 }
 async function ghPush(livres, sha, message) {
   const body = { message, content: utf8ToB64(JSON.stringify({ format: "ma-bibliotheque", version: 1, livres }, null, 1)) };
@@ -718,6 +787,7 @@ function sorter(s) {
 }
 function thumbHtml(b) {
   const c = `var(--cat-${CATS[b.cat] ? b.cat : "roman"})`;
+  if (isGhCover(b.couverture)) { return `<span class="thumb" style="--c:${c}"><img data-gh="${esc(b.couverture.slice(3))}" alt="" onerror="this.parentNode.innerHTML='<span class=&quot;spine&quot;></span>'"></span>`; }
   if (b.couverture) return `<span class="thumb" style="--c:${c}"><img src="${esc(b.couverture)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML='<span class=&quot;spine&quot;></span>'"></span>`;
   return `<span class="thumb" style="--c:${c}"><span class="spine"></span></span>`;
 }
@@ -900,6 +970,7 @@ function render() {
     if (!rows.length) { empty.hidden = false; empty.innerHTML = books.length ? `<h2>Aucun livre ne correspond</h2><p>Essayez un autre mot, une autre catégorie ou un autre statut.</p>` : emptyHtml(); bindEmpty(); }
     else empty.hidden = true;
   }
+  hydrateCovers();
   // Bandeau
   const ban = $("#banner");
   if (!cfg && books.length >= 1) { ban.hidden = false; ban.className = "note warn"; ban.innerHTML = `<span>Vos livres sont enregistrés seulement dans ce navigateur. Connectez GitHub pour les retrouver sur tous vos appareils.</span><button class="btn small" id="ban-sync">Connecter GitHub</button>`; $("#ban-sync").onclick = openSettings; }
@@ -926,7 +997,31 @@ function setCat(c) {
 }
 function setStatut(v) { form.statut = v; document.querySelectorAll("#f-statut button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v)); }
 function setNote(n) { form.note = n; $("#f-note").innerHTML = [1, 2, 3, 4, 5].map(i => `<button type="button" data-n="${i}" class="${i <= n ? "on" : ""}" aria-label="${i} étoile${i > 1 ? "s" : ""}">★</button>`).join(""); }
-function setCover(u) { form.couverture = u || ""; $("#cover-prev").hidden = !u; if (u) $("#cover-img").src = u; }
+function setCover(u) {
+  form.couverture = u || "";
+  const img = $("#cover-img");
+  $("#cover-del").hidden = !u; $("#cover-empty").hidden = !!u; img.hidden = !u;
+  $("#cover-url-row").hidden = true;
+  if (!u) { img.removeAttribute("src"); return; }
+  img.removeAttribute("src");
+  coverSrc(u).then(src => { if (form.couverture === u) { if (src) img.src = src; else { img.hidden = true; $("#cover-empty").hidden = false; $("#cover-empty").textContent = "Image indisponible"; } } });
+}
+// Réduit la photo à une vignette légère (300 px de large, JPEG)
+function imageToJpeg(source, sw, sh) {
+  const w = 300, h = Math.round(w * sh / sw);
+  const c = document.createElement("canvas"); c.width = w; c.height = Math.min(h, 600);
+  const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(source, 0, 0, sw, Math.min(sh, sw * 2), 0, 0, w, c.height);
+  return c.toDataURL("image/jpeg", 0.82);
+}
+async function coverFromFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    setCover(imageToJpeg(img, img.naturalWidth, img.naturalHeight));
+  } catch (e) { toast("Cette image n'a pas pu être lue. Essayez une photo JPEG ou PNG."); }
+  finally { URL.revokeObjectURL(url); }
+}
 function hint(id, cls, text) { const h = $(id); h.className = "hint" + (cls ? " " + cls : ""); h.textContent = text; h.hidden = !text; }
 function openPanel(b) {
   editing = b;
@@ -1013,7 +1108,20 @@ async function save() {
   // Même orthographe que les livres existants (« salon » → « Salon »)
   ["piece", "meuble", "editeur", "genre", "serie"].forEach(k => { const v = (b[k] || "").trim(); if (!v) return; const ex = books.find(x => x.id !== b.id && norm(x[k]) === norm(v)); if (ex) b[k] = ex[k]; });
   b.lieu = lieuText(b);
-  b.cat = form.cat; b.statut = form.statut; b.note = form.note; b.couverture = form.couverture;
+  b.cat = form.cat; b.statut = form.statut; b.note = form.note;
+  const oldCover = editing ? editing.couverture || "" : "";
+  b.couverture = form.couverture;
+  if (/^data:image\//.test(b.couverture) && cfg) {
+    const path = `couvertures/${b.id}-${Date.now().toString(36)}.jpg`;
+    $("#save").disabled = true; toast("Envoi de la couverture…");
+    try { await ghPutFile(path, b.couverture.split(",")[1], "Couverture : " + titre); }
+    catch (e) { $("#save").disabled = false; toast("Couverture non envoyée : " + e.message); return; }
+    $("#save").disabled = false;
+    // On garde l'image en cache pour l'afficher tout de suite
+    try { const blob = await (await fetch(b.couverture)).blob(); const c = await caches.open("biblio-couvertures"); await c.put("https://couvertures.local/" + path, new Response(blob, { headers: { "Content-Type": "image/jpeg" } })); } catch (e) {}
+    b.couverture = "gh:" + path;
+  }
+  if (isGhCover(oldCover) && oldCover !== b.couverture && cfg) ghDeleteFile(oldCover.slice(3), "Couverture remplacée : " + titre);
   if (b.pretA && !b.pretLe) b.pretLe = today();
   if (!b.pretA) b.pretLe = "";
   b.modifie = Date.now();
@@ -1025,7 +1133,7 @@ function askDelete() {
   const c = $("#confirm"); c.hidden = false;
   c.innerHTML = `<div class="confirm"><span>Supprimer « ${esc(editing.titre)} » ?</span><button class="btn danger" type="button" id="del-yes">Oui, supprimer</button><button class="btn ghost" type="button" id="del-no">Garder</button></div>`;
   $("#del-no").onclick = () => c.hidden = true;
-  $("#del-yes").onclick = async () => { const b = editing; closePanels(); if (await mutate(remove(b.id), "Supprime : " + b.titre)) toast("Livre supprimé"); };
+  $("#del-yes").onclick = async () => { const b = editing; closePanels(); if (await mutate(remove(b.id), "Supprime : " + b.titre)) { toast("Livre supprimé"); if (isGhCover(b.couverture) && cfg) ghDeleteFile(b.couverture.slice(3), "Couverture supprimée : " + b.titre); } };
   c.scrollIntoView({ block: "center" });
 }
 
@@ -1090,14 +1198,19 @@ function enhance(c) {
 }
 /* Caméra intégrée à la page : évite d'ouvrir l'appli Appareil photo, qui peut faire recharger la page sur Android */
 let ocrStream = null;
-async function startOcrCam() {
-  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { $("#ocr-file").click(); return; }
+let camMode = "isbn";
+async function startOcrCam(mode) {
+  camMode = mode === "cover" ? "cover" : "isbn";
+  const fallback = camMode === "cover" ? "#cover-file" : "#ocr-file";
+  $("#ocr-cam").classList.toggle("cover-mode", camMode === "cover");
+  $("#ocr-msg").textContent = camMode === "cover" ? "Cadrez la couverture du livre en entier, bien droite, en remplissant l'écran." : "Cadrez la ligne « ISBN … » dans le rectangle, assez près pour que les chiffres soient nets.";
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { $(fallback).click(); return; }
   try {
     ocrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } });
-  } catch (e) { hint("#lookup-hint", "warn", "Caméra inaccessible : autorisez-la dans le navigateur, ou choisissez une image."); $("#ocr-file").click(); return; }
+  } catch (e) { toast("Caméra inaccessible : autorisez-la dans le navigateur, ou choisissez une image."); $(fallback).click(); return; }
   const v = $("#ocr-video"); v.srcObject = ocrStream; $("#ocr-cam").hidden = false;
   try { await v.play(); } catch (e) {}
-  loadTesseract().catch(() => {}); // on prépare l'outil pendant le cadrage
+  if (camMode === "isbn") loadTesseract().catch(() => {}); // on prépare l'outil pendant le cadrage
 }
 function stopOcrCam() { if (ocrStream) ocrStream.getTracks().forEach(t => t.stop()); ocrStream = null; $("#ocr-cam").hidden = true; }
 function grabOcrFrames() {
@@ -1148,10 +1261,11 @@ async function readIsbnPhoto(file, frames) {
     hint("#lookup-hint", "err", "La photo n'a pas pu être lue. Réessayez, ou tapez le numéro.");
   } finally { btn.disabled = false; }
 }
-$("#ocr").onclick = startOcrCam;
+$("#ocr").onclick = () => startOcrCam("isbn");
 $("#ocr-stop").onclick = stopOcrCam;
-$("#ocr-gallery").onclick = () => { stopOcrCam(); $("#ocr-file").click(); };
-$("#ocr-shot").onclick = () => { const frames = grabOcrFrames(); stopOcrCam(); if (frames) { if (navigator.vibrate) navigator.vibrate(30); readIsbnPhoto(null, frames); } else hint("#lookup-hint", "warn", "La caméra n'était pas prête. Réessayez."); };
+$("#ocr-gallery").onclick = () => { stopOcrCam(); $(camMode === "cover" ? "#cover-file" : "#ocr-file").click(); };
+$("#ocr-shot").onclick = () => {
+  if (camMode === "cover") { const v = $("#ocr-video"); if (!v.videoWidth) { toast("La caméra n'était pas prête. Réessayez."); return; } const d = imageToJpeg(v, v.videoWidth, v.videoHeight); stopOcrCam(); setCover(d); return; } const frames = grabOcrFrames(); stopOcrCam(); if (frames) { if (navigator.vibrate) navigator.vibrate(30); readIsbnPhoto(null, frames); } else hint("#lookup-hint", "warn", "La caméra n'était pas prête. Réessayez."); };
 $("#ocr-file").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) readIsbnPhoto(f); };
 
 /* ================= Scanner (Chrome Android, Edge…) ================= */
@@ -1266,6 +1380,18 @@ $("#add").onclick = () => openPanel(null);
 $("#close").onclick = closePanels; $("#cancel").onclick = closePanels; $("#scrim").onclick = closePanels; $("#s-close").onclick = closePanels;
 $("#save").onclick = save; $("#del").onclick = askDelete; $("#lookup").onclick = doLookup; $("#scan").onclick = startScan; $("#scan-stop").onclick = stopScan;
 $("#cover-del").onclick = () => setCover("");
+$("#cover-pick").onclick = () => $("#cover-file").click();
+$("#cover-file").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) coverFromFile(f); };
+$("#cover-cam").onclick = () => startOcrCam("cover");
+$("#cover-url-btn").onclick = () => { $("#cover-url-row").hidden = false; $("#cover-url").value = ""; $("#cover-url").focus(); };
+$("#cover-url-ok").onclick = () => {
+  const u = $("#cover-url").value.trim();
+  if (!/^https?:\/\/\S+$/i.test(u)) { toast("Collez une adresse qui commence par https://"); return; }
+  const test = new Image(); test.referrerPolicy = "no-referrer";
+  test.onload = () => setCover(u.replace(/^http:/, "https:"));
+  test.onerror = () => toast("Aucune image à cette adresse. Copiez l'adresse de l'image elle-même, pas celle de la page.");
+  test.src = u;
+};
 $("#form").addEventListener("submit", e => { e.preventDefault(); save(); });
 $("#f-isbn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doLookup(); } });
 $("#f-serie").addEventListener("change", applySeriePrefill);
