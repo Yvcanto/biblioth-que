@@ -149,7 +149,8 @@ label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--mute
 label input,label select,label textarea{padding:9px 11px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);font-size:16px;width:100%}
 label textarea{min-height:72px;resize:vertical}
 .isbn-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
-.isbn-row label{flex:1 1 180px}
+.isbn-row label{flex:1 1 100%}
+.isbn-row .btn{flex:1 1 auto}
 .isbn-row input{font-family:var(--f-mono);letter-spacing:.04em}
 .hint{font-size:12.5px;color:var(--muted);margin:0}
 .hint.ok{color:var(--accent)}.hint.err{color:var(--danger)}.hint.warn{color:var(--warn)}
@@ -260,7 +261,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 12 · 1er novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 13 · 1er novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -278,6 +279,8 @@ label textarea{min-height:72px;resize:vertical}
           <input id="f-isbn" inputmode="numeric" placeholder="978-2-07-036002-4">
         </label>
         <button type="button" class="btn" id="scan" hidden>Scanner</button>
+        <button type="button" class="btn" id="ocr" title="Photographier le numéro imprimé (livres sans code-barres)">Photo du numéro</button>
+        <input type="file" id="ocr-file" accept="image/*" capture="environment" hidden>
         <button type="button" class="btn primary" id="lookup">Rechercher</button>
       </div>
       <p class="hint" id="lookup-hint">Les informations viennent de la BnF, de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.</p>
@@ -1013,6 +1016,100 @@ function askDelete() {
   $("#del-yes").onclick = async () => { const b = editing; closePanels(); if (await mutate(remove(b.id), "Supprime : " + b.titre)) toast("Livre supprimé"); };
   c.scrollIntoView({ block: "center" });
 }
+
+/* ================= Lecture du numéro imprimé (photo + reconnaissance de texte) ================= */
+// L'outil de reconnaissance (Tesseract) n'est téléchargé qu'à la première utilisation, puis reste en cache.
+const TESS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+let tessLoad = null, tessWorker = null;
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve();
+  if (!tessLoad) tessLoad = new Promise((res, rej) => {
+    const sc = document.createElement("script"); sc.src = TESS_URL; sc.onload = res;
+    sc.onerror = () => { tessLoad = null; rej(new Error("load")); };
+    document.head.appendChild(sc);
+  });
+  return tessLoad;
+}
+async function getOcrWorker(onProgress) {
+  await loadTesseract();
+  if (!tessWorker) {
+    tessWorker = await Tesseract.createWorker("eng", 1, { logger: m => { if (onProgress && m.status) onProgress(m); } });
+    await tessWorker.setParameters({ tessedit_char_whitelist: "0123456789Xx-–ISBN: " });
+  }
+  tessWorker.__progress = onProgress;
+  return tessWorker;
+}
+// Trouve un ISBN valide (chiffre de contrôle correct) dans le texte lu
+function extractIsbn(text) {
+  const good = [], doubt = [];
+  String(text || "").toUpperCase().split(/\n/).forEach(line => {
+    const hasWord = /I\s*S\s*B\s*N/.test(line);
+    const compact = line.replace(/I\s*S\s*B\s*N/g, " ").replace(/O/g, "0").replace(/[|L]/g, "1").replace(/[\s\-–.:]/g, "");
+    (compact.match(/[0-9X]{10,}/g) || []).forEach(run => {
+      for (let i = 0; i + 10 <= run.length; i++) {
+        const w13 = run.substr(i, 13), w10 = run.substr(i, 10);
+        if (/^97[89]\d{10}$/.test(w13)) { (isbnValid(w13) ? good : doubt).push({ isbn: w13, score: (hasWord ? 2 : 0) + 1 }); }
+        if (/^\d{9}[\dX]$/.test(w10) && !/^97[89]/.test(w10) && isbnValid(w10)) good.push({ isbn: w10, score: hasWord ? 2 : 0 }); // gardé tel qu'imprimé
+      }
+    });
+  });
+  good.sort((a, b) => b.score - a.score); doubt.sort((a, b) => b.score - a.score);
+  return { isbn: good[0] ? good[0].isbn : "", doute: doubt[0] ? doubt[0].isbn : "" };
+}
+async function fileToCanvas(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    const ctx = c.getContext("2d"); ctx.drawImage(img, 0, 0, c.width, c.height);
+    // Niveaux de gris + contraste renforcé
+    const d = ctx.getImageData(0, 0, c.width, c.height), px = d.data; let lo = 255, hi = 0;
+    for (let i = 0; i < px.length; i += 4) { const g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]; px[i] = g; if (g < lo) lo = g; if (g > hi) hi = g; }
+    const span = Math.max(1, hi - lo);
+    for (let i = 0; i < px.length; i += 4) { const g = Math.max(0, Math.min(255, (px[i] - lo) * 255 / span)); px[i] = px[i + 1] = px[i + 2] = g; }
+    ctx.putImageData(d, 0, 0);
+    return c;
+  } finally { URL.revokeObjectURL(url); }
+}
+function rotated(c, deg) {
+  const r = document.createElement("canvas"), q = deg % 180 !== 0;
+  r.width = q ? c.height : c.width; r.height = q ? c.width : c.height;
+  const ctx = r.getContext("2d"); ctx.translate(r.width / 2, r.height / 2); ctx.rotate(deg * Math.PI / 180); ctx.drawImage(c, -c.width / 2, -c.height / 2);
+  return r;
+}
+async function readIsbnPhoto(file) {
+  const btn = $("#ocr"); btn.disabled = true;
+  try {
+    hint("#lookup-hint", "", window.Tesseract ? "Lecture de la photo…" : "Préparation de la lecture (téléchargement la première fois, quelques secondes)…");
+    let worker;
+    try { worker = await getOcrWorker(m => { if (m.status === "recognizing text") hint("#lookup-hint", "", `Lecture de la photo… ${Math.round((m.progress || 0) * 100)} %`); }); }
+    catch (e) { hint("#lookup-hint", "err", "Impossible de charger l'outil de lecture. Vérifiez votre connexion internet et réessayez."); return; }
+    const base = await fileToCanvas(file);
+    let best = { isbn: "", doute: "" };
+    for (const deg of [0, 90, 270]) {
+      if (deg) hint("#lookup-hint", "", "Numéro pas trouvé à l'horizontale, essai en tournant la photo…");
+      const { data } = await worker.recognize(deg ? rotated(base, deg) : base);
+      const r = extractIsbn(data.text);
+      if (r.isbn) { best = r; break; }
+      if (!best.doute && r.doute) best.doute = r.doute;
+    }
+    if (best.isbn) {
+      $("#f-isbn").value = best.isbn; if (navigator.vibrate) navigator.vibrate(60);
+      await doLookup();
+      const h = $("#lookup-hint"); h.insertBefore(document.createTextNode(`ISBN lu sur la photo : ${best.isbn}. `), h.firstChild);
+    } else if (best.doute) {
+      $("#f-isbn").value = best.doute;
+      hint("#lookup-hint", "warn", `Lecture incertaine : « ${best.doute} » n'est pas un ISBN valide, un chiffre a sans doute été mal lu. Comparez avec le livre, corrigez puis touchez « Rechercher ».`);
+    } else {
+      hint("#lookup-hint", "warn", "Aucun ISBN lisible sur la photo. Reprenez-la plus près, bien éclairée et nette, avec la ligne « ISBN » au centre. Vous pouvez aussi taper le numéro.");
+    }
+  } catch (e) {
+    hint("#lookup-hint", "err", "La photo n'a pas pu être lue. Réessayez, ou tapez le numéro.");
+  } finally { btn.disabled = false; }
+}
+$("#ocr").onclick = () => $("#ocr-file").click();
+$("#ocr-file").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) readIsbnPhoto(f); };
 
 /* ================= Scanner (Chrome Android, Edge…) ================= */
 let scanStream = null, scanTimer = null;
