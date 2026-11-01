@@ -260,7 +260,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 10 · 31 octobre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 11 · 1er novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -452,6 +452,12 @@ function isbnValid(i) {
   if (/^\d{9}[\dX]$/.test(i)) { let s = 0; for (let k = 0; k < 10; k++) s += (i[k] === "X" ? 10 : +i[k]) * (10 - k); return s % 11 === 0; }
   return false;
 }
+// Un même livre peut avoir un ISBN à 10 et à 13 chiffres : on compare toujours la forme à 13 chiffres
+function isbn13(i) {
+  i = cleanIsbn(i);
+  if (/^\d{9}[\dX]$/.test(i)) { const b = "978" + i.slice(0, 9); let s = 0; for (let k = 0; k < 12; k++) s += +b[k] * (k % 2 ? 3 : 1); return b + ((10 - s % 10) % 10); }
+  return i;
+}
 function utf8ToB64(str) { const bytes = new TextEncoder().encode(str); let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin); }
 function b64ToUtf8(b64) { const bin = atob(String(b64).replace(/\s/g, "")); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
 
@@ -621,8 +627,9 @@ async function lookupIsbn(isbn) {
   ]);
   let gv = null;
   if (g && g.items && g.items.length) {
-    const match = g.items.find(it => (it.volumeInfo.industryIdentifiers || []).some(x => cleanIsbn(x.identifier) === isbn));
-    gv = (match || (g.items.length === 1 ? g.items[0] : null))?.volumeInfo || null;
+    // Seulement un résultat qui porte exactement cet ISBN (Google renvoie parfois des livres sans rapport)
+    const match = g.items.find(it => (it.volumeInfo.industryIdentifiers || []).some(x => isbn13(x.identifier) === isbn13(isbn)));
+    gv = match ? match.volumeInfo : null;
   }
   const od = ol && ol["ISBN:" + isbn];
   const bnf = parseBnf(bx);
@@ -909,6 +916,7 @@ function hint(id, cls, text) { const h = $(id); h.className = "hint" + (cls ? " 
 function openPanel(b) {
   editing = b;
   $("#p-title").textContent = b ? "Modifier le livre" : "Ajouter un livre";
+  filledByLookup = null;
   if (b) ensureParts(b);
   FIELDS.forEach(k => $("#f-" + k).value = b ? (b[k] || "") : "");
   fillPlaceDl();
@@ -921,7 +929,17 @@ function openPanel(b) {
   if (!b && matchMedia("(pointer:fine)").matches) setTimeout(() => $("#f-isbn").focus(), 60);
 }
 function closePanels() { $("#scrim").hidden = true; $("#panel").hidden = true; $("#settings").hidden = true; editing = null; stopScan(); }
-function fillEmpty(k, v) { const el = $("#f-" + k); if (v && !el.value.trim()) { el.value = v; return true; } return false; }
+let filledByLookup = null; // champs remplis par la dernière recherche ISBN, pour pouvoir les effacer
+function fillEmpty(k, v) { const el = $("#f-" + k); if (v && !el.value.trim()) { el.value = v; if (filledByLookup) filledByLookup.push(k); return true; } return false; }
+function undoLookup() {
+  if (!filledByLookup) return;
+  filledByLookup.forEach(k => $("#f-" + k).value = "");
+  if (filledByLookup.catAvant !== undefined) setCat(filledByLookup.catAvant);
+  if (filledByLookup.coverAvant !== undefined) setCover(filledByLookup.coverAvant);
+  filledByLookup = null;
+  hint("#lookup-hint", "", "Champs remplis effacés. Saisissez le livre à la main, ou vérifiez l'ISBN et relancez la recherche.");
+  hint("#serie-hint", "", "");
+}
 
 function applySeriePrefill() {
   const s = norm($("#f-serie").value);
@@ -940,23 +958,30 @@ function applySeriePrefill() {
 async function doLookup() {
   const isbn = cleanIsbn($("#f-isbn").value);
   if (!isbnValid(isbn)) { hint("#lookup-hint", "err", "Ce numéro n'est pas un ISBN valide (10 ou 13 chiffres). Vérifiez-le au dos du livre."); return; }
-  const dup = books.find(b => cleanIsbn(b.isbn) === isbn && (!editing || b.id !== editing.id));
+  const dup = books.find(b => b.isbn && isbn13(b.isbn) === isbn13(isbn) && (!editing || b.id !== editing.id));
   const btn = $("#lookup"); btn.disabled = true; hint("#lookup-hint", "", "Recherche…");
   const r = await lookupIsbn(isbn);
   btn.disabled = false;
   $("#f-isbn").value = isbn;
   if (!r || !r.titre) { hint("#lookup-hint", "warn", "Livre introuvable dans les bases en ligne (fréquent pour les livres anciens ou rares). Remplissez les champs à la main." + (dup ? ` Attention : « ${dup.titre} » a déjà cet ISBN.` : "")); return; }
-  if (!form.cat && r.cat) setCat(r.cat);
+  filledByLookup = [];
+  const catAvant = form.cat, coverAvant = form.couverture;
+  if (!form.cat && r.cat) { setCat(r.cat); filledByLookup.catAvant = catAvant; }
   fillEmpty("titre", r.titre); fillEmpty("serie", r.serie); fillEmpty("tome", r.tome);
   fillEmpty("editeur", r.editeur); fillEmpty("annee", r.annee); fillEmpty("format", r.format);
   let roles = "";
   if (form.cat === "bd" && r.dessinateurs.length) { fillEmpty("auteur", r.auteurs.join(", ")); fillEmpty("dessinateur", r.dessinateurs.join(", ")); }
   else if (form.cat === "bd" && r.auteurs.length >= 2 && !r.rolesSurs) { fillEmpty("auteur", r.auteurs[0]); fillEmpty("dessinateur", r.auteurs.slice(1).join(", ")); roles = " Vérifiez qui est scénariste et qui est dessinateur : les bases ne le précisent pas."; }
   else fillEmpty("auteur", r.auteurs.join(", "));
-  if (r.couverture && !form.couverture) setCover(r.couverture);
+  if (r.couverture && !form.couverture) { setCover(r.couverture); filledByLookup.coverAvant = coverAvant; }
   if (r.serie) applySeriePrefill();
   const missing = [!form.cat && "la catégorie", !r.serie && form.cat === "bd" && "la série"].filter(Boolean);
   hint("#lookup-hint", dup ? "warn" : "ok", (dup ? `Attention : « ${dup.titre} » a déjà cet ISBN dans votre bibliothèque. ` : `Informations trouvées (${r.sources.join(", ")}). Vérifiez-les avant d'enregistrer.`) + roles + (missing.length ? ` À compléter : ${missing.join(", ")}.` : ""));
+  if (filledByLookup.length || filledByLookup.catAvant !== undefined) {
+    const u = document.createElement("button"); u.type = "button"; u.className = "btn small"; u.style.marginLeft = "8px";
+    u.textContent = "Ce n'est pas mon livre : effacer"; u.onclick = undoLookup;
+    $("#lookup-hint").appendChild(u);
+  }
 }
 
 async function save() {
