@@ -284,7 +284,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 17 · 1er novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 20 · 2 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -335,6 +335,7 @@ label textarea{min-height:72px;resize:vertical}
     <fieldset>
       <legend>Catégorie *</legend>
       <div class="choice" id="f-cat" role="group" aria-label="Catégorie"></div>
+      <p class="hint ok" id="cat-hint" hidden></p>
     </fieldset>
 
     <fieldset>
@@ -359,6 +360,7 @@ label textarea{min-height:72px;resize:vertical}
         </label>
         <label for="f-genre">Genre (facultatif)<input id="f-genre" list="dl-genres" placeholder="Policier, Western…"></label>
       </div>
+      <p class="hint ok" id="genre-hint" hidden></p>
     </fieldset>
 
     <fieldset>
@@ -1087,9 +1089,11 @@ function openPanel(b) {
   filledByLookup = null; applySeriePrefill.got = null;
   if (b) ensureParts(b);
   FIELDS.forEach(k => $("#f-" + k).value = b ? (b[k] || "") : "");
+  delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true;
   form.mots = b ? tagsOf(b).slice() : []; $("#f-tag").value = ""; renderTagChips();
   fillPlaceDl();
   setCat(b ? b.cat || "" : (CATS[prefs.cat] ? prefs.cat : ""));
+  form.catAuto = !b || !b.cat; form.catFromIsbn = false; $("#cat-hint").hidden = true;
   setStatut(b ? b.statut || "alire" : "alire"); setNote(b ? b.note || 0 : 0); setCover(b ? b.couverture : "");
   $("#del").hidden = !b; $("#confirm").hidden = true;
   hint("#lookup-hint", "", "Les informations viennent de la BnF, de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.");
@@ -1100,10 +1104,54 @@ function openPanel(b) {
 function closePanels() { $("#scrim").hidden = true; $("#panel").hidden = true; $("#settings").hidden = true; editing = null; stopScan(); stopOcrCam(); }
 let filledByLookup = null; // champs remplis par la dernière recherche ISBN, pour pouvoir les effacer
 function fillEmpty(k, v) { const el = $("#f-" + k); if (v && !el.value.trim()) { el.value = v; if (filledByLookup) filledByLookup.push(k); return true; } return false; }
+/* Catégorie : déduite des autres livres du même auteur, sinon du genre */
+function inferCat() {
+  const names = $("#f-auteur").value.split(/\s*,\s*/).map(norm).filter(Boolean);
+  if (names.length) {
+    const counts = {}; let total = 0;
+    books.filter(b => CATS[b.cat] && (!editing || b.id !== editing.id) && String(b.auteur || "").split(/\s*,\s*/).some(a => names.includes(norm(a))))
+      .forEach(b => { counts[b.cat] = (counts[b.cat] || 0) + 1; total++; });
+    if (total) { const [c, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]; return { cat: c, why: `reprise des autres livres de cet auteur (${n} sur ${total})` }; }
+  }
+  const g = norm($("#f-genre").value);
+  if (g) {
+    const hits = Object.keys(GENRES).filter(c => GENRES[c].some(x => norm(x) === g));
+    const mine = [...new Set(books.filter(b => CATS[b.cat] && norm(b.genre) === g).map(b => b.cat))];
+    const cands = mine.length === 1 ? mine : hits.length === 1 ? hits : [];
+    if (cands.length === 1) return { cat: cands[0], why: "déduite du genre" };
+  }
+  return null;
+}
+function applyAuthorCat() {
+  if (form.cat && (!form.catAuto || form.catFromIsbn)) return; // choisie à la main ou trouvée par l'ISBN : on n'y touche pas
+  const r = inferCat();
+  if (!r) return;
+  if (r.cat !== form.cat) setCat(r.cat);
+  form.catAuto = true;
+  const h = $("#cat-hint"); h.textContent = `Catégorie ${r.why}. Touchez une autre catégorie si besoin.`; h.hidden = false;
+}
+/* Genre : reprend celui de la majorité des livres du même auteur, si le champ est vide */
+function applyAuthorGenre() {
+  const g = $("#f-genre"), h = $("#genre-hint");
+  if (g.value.trim() && !g.dataset.auto) return;           // genre choisi à la main : on n'y touche pas
+  const names = $("#f-auteur").value.split(/\s*,\s*/).map(norm).filter(Boolean);
+  if (!names.length) { if (g.dataset.auto) { g.value = ""; delete g.dataset.auto; } h.hidden = true; return; }
+  const counts = new Map(); let total = 0;
+  books.filter(b => b.genre && (!editing || b.id !== editing.id) && String(b.auteur || "").split(/\s*,\s*/).some(a => names.includes(norm(a))))
+    .sort((a, b) => (b.ajoute || 0) - (a.ajoute || 0))      // à égalité, le plus récent l'emporte
+    .forEach(b => { const k = norm(b.genre); const e = counts.get(k) || { v: b.genre, n: 0 }; e.n++; counts.set(k, e); total++; });
+  if (!total) { if (g.dataset.auto) { g.value = ""; delete g.dataset.auto; } h.hidden = true; return; }
+  const best = [...counts.values()].reduce((a, b) => b.n > a.n ? b : a);
+  g.value = best.v; g.dataset.auto = "1";
+  h.textContent = `Genre repris des autres livres de cet auteur (${best.n} sur ${total}). Changez-le si ce livre fait exception.`;
+  h.hidden = false;
+}
 function undoLookup() {
   if (!filledByLookup) return;
   filledByLookup.forEach(k => $("#f-" + k).value = "");
-  if (filledByLookup.catAvant !== undefined) setCat(filledByLookup.catAvant);
+  if ($("#f-genre").dataset.auto) { $("#f-genre").value = ""; delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true; }
+  form.catFromIsbn = false;
+  if (filledByLookup.catAvant !== undefined) { setCat(filledByLookup.catAvant); $("#cat-hint").hidden = true; }
   if (filledByLookup.coverAvant !== undefined) setCover(filledByLookup.coverAvant);
   filledByLookup = null;
   hint("#lookup-hint", "", "Champs remplis effacés. Saisissez le livre à la main, ou vérifiez l'ISBN et relancez la recherche.");
@@ -1116,7 +1164,9 @@ function applySeriePrefill() {
   const same = books.filter(b => norm(b.serie) === s && (!editing || b.id !== editing.id)).sort(serieOrder);
   if (!same.length) { hint("#serie-hint", "", ""); return; }
   const last = same[same.length - 1];
-  if (!form.cat && last.cat) setCat(last.cat);
+  if ((!form.cat || form.catAuto) && !form.catFromIsbn && last.cat) { setCat(last.cat); form.catAuto = true; $("#cat-hint").textContent = "Catégorie reprise des autres tomes de la série."; $("#cat-hint").hidden = false; }
+  // Le genre du tome précédent est plus précis que celui déduit de l'auteur
+  if ($("#f-genre").dataset.auto && last.genre) { $("#f-genre").value = ""; delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true; }
   const got = [];
   // Champs repris du dernier tome (le message reste juste même si l'événement se déclenche deux fois)
   ["auteur", "dessinateur", "editeur", "format", "genre", "piece", "meuble", "etagere", "rang"].forEach(k => { if (fillEmpty(k, last[k]) || (last[k] && $("#f-" + k).value === last[k] && applySeriePrefill.got && applySeriePrefill.got.includes(k))) got.push(k); });
@@ -1124,6 +1174,7 @@ function applySeriePrefill() {
   // Le numéro de tome n'est jamais rempli automatiquement : on rappelle seulement ceux déjà saisis
   const tomes = same.map(b => parseInt(b.tome, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
   $("#f-serie").value = same[0].serie; // même orthographe que les autres tomes
+  applyAuthorGenre();
   hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série` + (tomes.length ? ` (tome${tomes.length > 1 ? "s" : ""} ${tomes.length > 15 ? tomes.slice(0, 15).join(", ") + "…" : tomes.join(", ")})` : "") + "." + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", piece: "pièce", meuble: "meuble", etagere: "étagère", rang: "rang" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
 }
 
@@ -1138,7 +1189,12 @@ async function doLookup() {
   if (!r || !r.titre) { hint("#lookup-hint", "warn", "Livre introuvable dans les bases en ligne (fréquent pour les livres anciens ou rares). Remplissez les champs à la main." + (dup ? ` Attention : « ${dup.titre} » a déjà cet ISBN.` : "")); return; }
   filledByLookup = [];
   const catAvant = form.cat, coverAvant = form.couverture;
-  if (!form.cat && r.cat) { setCat(r.cat); filledByLookup.catAvant = catAvant; }
+  // La catégorie trouvée par la recherche ISBN est prioritaire sur les déductions (série, auteur, genre)
+  if ((!form.cat || form.catAuto) && r.cat) {
+    if (r.cat !== form.cat) { setCat(r.cat); filledByLookup.catAvant = catAvant; }
+    form.catAuto = true; form.catFromIsbn = true;
+    $("#cat-hint").textContent = "Catégorie proposée par la recherche ISBN. Touchez une autre catégorie si besoin."; $("#cat-hint").hidden = false;
+  }
   fillEmpty("titre", r.titre); fillEmpty("serie", r.serie); fillEmpty("tome", r.tome);
   fillEmpty("editeur", r.editeur); fillEmpty("annee", r.annee); fillEmpty("format", r.format);
   let roles = "";
@@ -1147,6 +1203,7 @@ async function doLookup() {
   else fillEmpty("auteur", r.auteurs.join(", "));
   if (r.couverture && !form.couverture) { setCover(r.couverture); filledByLookup.coverAvant = coverAvant; }
   if (r.serie) applySeriePrefill();
+  applyAuthorCat(); applyAuthorGenre();
   const missing = [!form.cat && "la catégorie", !r.serie && form.cat === "bd" && "la série"].filter(Boolean);
   hint("#lookup-hint", dup ? "warn" : "ok", (dup ? `Attention : « ${dup.titre} » a déjà cet ISBN dans votre bibliothèque. ` : `Informations trouvées (${r.sources.join(", ")}). Vérifiez-les avant d'enregistrer.`) + roles + (missing.length ? ` À compléter : ${missing.join(", ")}.` : ""));
   if (filledByLookup.length || filledByLookup.catAvant !== undefined) {
@@ -1158,6 +1215,7 @@ async function doLookup() {
 
 async function save() {
   const titre = $("#f-titre").value.trim();
+  if (!form.cat) { const r = inferCat(); if (r) setCat(r.cat); }
   if (!form.cat) { toast("Choisissez une catégorie : Roman, BD ou Technique."); $("#f-cat").scrollIntoView({ block: "center" }); return; }
   if (!titre) { toast("Indiquez au moins le titre."); $("#f-titre").focus(); return; }
   const b = editing ? Object.assign({}, editing) : { id: uid(), ajoute: Date.now() };
@@ -1488,9 +1546,12 @@ $("#cover-url-ok").onclick = () => {
 $("#form").addEventListener("submit", e => { e.preventDefault(); save(); });
 $("#f-isbn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doLookup(); } });
 $("#f-serie").addEventListener("change", applySeriePrefill);
+$("#f-auteur").addEventListener("change", () => { applyAuthorCat(); applyAuthorGenre(); });
+$("#f-genre").addEventListener("change", () => { if (!form.cat) applyAuthorCat(); });
+$("#f-genre").addEventListener("input", () => { delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true; });
 $("#f-piece").addEventListener("input", fillPlaceDl); $("#f-meuble").addEventListener("input", fillPlaceDl);
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (!$("#ocr-cam").hidden) stopOcrCam(); else if (!$("#scanner").hidden) stopScan(); else closePanels(); });
-$("#f-cat").onclick = e => { const b = e.target.closest("button"); if (b) setCat(b.dataset.v); };
+$("#f-cat").onclick = e => { const b = e.target.closest("button"); if (b) { setCat(b.dataset.v); form.catAuto = false; form.catFromIsbn = false; $("#cat-hint").hidden = true; } };
 $("#f-statut").onclick = e => { const b = e.target.closest("button"); if (b) setStatut(b.dataset.v); };
 $("#f-note").onclick = e => { const b = e.target.closest("button"); if (b) { const n = +b.dataset.n; setNote(n === form.note ? 0 : n); } };
 $("#list").onclick = e => { const r = e.target.closest(".row"); if (r) { const b = books.find(x => x.id === r.dataset.id); if (b) openPanel(b); } };
