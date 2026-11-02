@@ -16,7 +16,7 @@
   --paper:#f6f5f0; --card:#fffefb; --ink:#1f2a24; --muted:#5f6b63; --line:#dcdcd2;
   --accent:#1d5c45; --accent-ink:#fff; --accent-soft:#e3eee8;
   --warn:#9a5b12; --warn-soft:#f6ead8; --danger:#a3312b; --danger-soft:#f6e1df;
-  --cat-roman:#2f5d50; --cat-bd:#a2452c; --cat-technique:#34507f;
+  --cat-roman:#2f5d50; --cat-bd:#a2452c; --cat-technique:#34507f; --cat-jdr:#6a4a8c;
   --f-display:"Spectral",Georgia,"Times New Roman",serif;
   --f-body:"Karla",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
@@ -27,7 +27,7 @@
   --paper:#141a17; --card:#1b2420; --ink:#e7ebe6; --muted:#9aa7a0; --line:#2e3a34;
   --accent:#6fc2a0; --accent-ink:#0f1a15; --accent-soft:#1f3a30;
   --warn:#e3a85b; --warn-soft:#3a2d1b; --danger:#ec8a83; --danger-soft:#3d2321;
-  --cat-roman:#4f9a83; --cat-bd:#cf6b4f; --cat-technique:#6c86c2;
+  --cat-roman:#4f9a83; --cat-bd:#cf6b4f; --cat-technique:#6c86c2; --cat-jdr:#a588c8;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.4);
   color-scheme:dark;
 }}
@@ -289,7 +289,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 23 · 2 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 24 · 2 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -500,14 +500,16 @@ label textarea{min-height:72px;resize:vertical}
 const CATS = {
   roman:     { label: "Roman",     pluriel: "Romans" },
   bd:        { label: "BD",        pluriel: "BD" },
-  technique: { label: "Technique", pluriel: "Technique" }
+  technique: { label: "Technique", pluriel: "Technique" },
+  jdr:       { label: "JDR",       pluriel: "JDR" }
 };
 const STATUTS = { alire: "À lire", encours: "En cours", lu: "Lu" };
 // Genres proposés selon la catégorie (complétez si vous voulez). Ceux que vous saisissez s'y ajoutent automatiquement.
 const GENRES = {
   roman: ["Aventure", "Biographie", "Classique", "Essai", "Fantastique", "Fantasy", "Historique", "Horreur", "Humour", "Jeunesse", "Littérature", "Nouvelles", "Poésie", "Policier", "Romance", "Science-fiction", "Thriller", "Témoignage"],
   bd: ["Aventure", "Comics", "Fantasy", "Historique", "Humour", "Jeunesse", "Manga", "Policier", "Roman graphique", "Science-fiction", "Western"],
-  technique: ["Art", "Bricolage", "Cuisine", "Droit", "Économie", "Histoire", "Informatique", "Jardinage", "Langues", "Musique", "Nature", "Photographie", "Santé", "Sciences", "Sport", "Voyage"]
+  technique: ["Art", "Bricolage", "Cuisine", "Droit", "Économie", "Histoire", "Informatique", "Jardinage", "Langues", "Musique", "Nature", "Photographie", "Santé", "Sciences", "Sport", "Voyage"],
+  jdr: ["Contemporain", "Cyberpunk", "Enquête", "Fantasy", "Historique", "Horreur", "Médiéval-fantastique", "Post-apocalyptique", "Pulp", "Science-fiction", "Space opera", "Steampunk", "Super-héros", "Western"]
 };
 // Éditeurs proposés d'office (complétez la liste si vous voulez). Ceux que vous saisissez s'y ajoutent automatiquement.
 const EDITEURS = ["10/18", "Actes Sud", "Albin Michel", "Babel", "Bamboo", "Belfond", "Bragelonne", "Calmann-Lévy", "Casterman", "Dargaud", "Delcourt", "Denoël", "Dunod", "Dupuis", "ENI", "Eyrolles", "Fayard", "Flammarion", "Fleuve Éditions", "Folio", "Futuropolis", "Gallimard", "Glénat", "Grasset", "Hachette", "Hugo Roman", "J'ai lu", "JC Lattès", "Julliard", "Kana", "Ki-oon", "L'Atalante", "Larousse", "Le Livre de Poche", "Le Lombard", "Le Masque", "Les Arènes", "Les Éditions de Minuit", "Marabout", "Michel Lafon", "Milady", "Payot & Rivages", "Pika", "Plon", "Pocket", "Points", "Presses de la Cité", "Rivages", "Robert Laffont", "Rue de Sèvres", "Seuil", "Soleil", "Sonatine", "Stock", "XO Éditions"];
@@ -710,6 +712,7 @@ function parseOlSeries(s) {
 }
 function guessCat(text) {
   const t = norm(text);
+  if (/role[- ]?playing|jeux? de role|\brpg\b|dungeons|donjons/.test(t)) return "jdr";
   if (/comic|graphic novel|bande(s)? dessinee|\bbd\b|manga/.test(t)) return "bd";
   if (/fiction|roman|novel|literature|litterature|poetry|drama|thriller|polar|detective/.test(t)) return "roman";
   if (/computer|technolog|engineering|mathemat|science|reference|crafts|hobbies|cooking|house|garden|business|economics|medical|informatique|programm|bricolage|jardinage|cuisine|technique|manuel|transportation|architecture|law/.test(t)) return "technique";
@@ -1261,7 +1264,7 @@ async function save() {
   // Sans titre d'ensemble, les titres réunis servent de titre (« Le Syndrome E · Gataca · Atomka »)
   const titre = titreSaisi || contenu.join(" · ");
   if (!form.cat) { const r = inferCat(); if (r) setCat(r.cat); }
-  if (!form.cat) { toast("Choisissez une catégorie : Roman, BD ou Technique."); $("#f-cat").scrollIntoView({ block: "center" }); return; }
+  if (!form.cat) { toast("Choisissez une catégorie : Roman, BD, Technique ou JDR."); $("#f-cat").scrollIntoView({ block: "center" }); return; }
   if (!titre) { toast("Indiquez au moins le titre (ou les titres réunis)."); $("#f-titre").focus(); return; }
   const b = editing ? Object.assign({}, editing) : { id: uid(), ajoute: Date.now() };
   FIELDS.forEach(k => b[k] = $("#f-" + k).value.trim());
