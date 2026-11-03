@@ -298,7 +298,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 28 · 3 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 29 · 3 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -726,7 +726,7 @@ function parseSerieTitle(title) {
   return m ? { serie: m[1].trim(), tome: m[2], titre: (m[3] || "").trim() } : null;
 }
 function parseOlSeries(s) {
-  const m = String(s || "").match(/^(.+?)\s*(?:[;,#]|--|\b(?:tome|t\.|vol\.?|n°)\s*)\s*(\d+)\s*$/i);
+  const m = String(s || "").match(/^(.+?)\s*(?:[;,#]|--|\b(?:tome|t\.|vol\.?|n°)\s*)\s*(\d+)\s*[.)]?\s*$/i);
   return m ? { serie: m[1].replace(/[;,\s]+$/, "").trim(), tome: m[2] } : { serie: String(s || "").trim(), tome: "" };
 }
 function guessCat(text) {
@@ -1609,11 +1609,16 @@ function disconnect() {
 
 /* ================= Export / import ================= */
 const CSV_COLS = [["titre", "Titre"], ["cat", "Catégorie"], ["serie", "Série"], ["tome", "Tome"], ["auteur", "Auteur / scénariste"], ["dessinateur", "Dessinateur"], ["editeur", "Éditeur"], ["annee", "Année"], ["format", "Format"], ["genre", "Genre"], ["isbn", "ISBN"], ["piece", "Pièce"], ["meuble", "Meuble"], ["etagere", "Étagère"], ["rang", "Rang"], ["lieu", "Emplacement"], ["statut", "Statut"], ["note", "Note"], ["pretA", "Prêté à"], ["pretLe", "Prêté le"], ["contenu", "Titres réunis"], ["motscles", "Mots-clés"], ["notes", "Remarques"], ["couverture", "Couverture"], ["id", "id"]];
+// Excel transforme « 1-2 » en date (1er février) : un caractère invisible au début l'oblige à garder le texte tel quel
+function asText(k, v) {
+  v = v == null ? "" : String(v);
+  return ["tome", "etagere", "rang"].includes(k) && /\d\s*[-–\/.]\s*\d/.test(v) ? "\u2060" + v : v;
+}
 function toCsv(list) {
   const cell = v => { const s = String(v ?? ""); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const lines = [CSV_COLS.map(c => c[1]).join(";")];
   list.forEach(b => ensureParts(b));
-  list.forEach(b => lines.push(CSV_COLS.map(([k]) => cell(k === "cat" ? (CATS[b.cat]?.label || b.cat) : k === "statut" ? (STATUTS[b.statut] || b.statut) : k === "isbn" && b.isbn ? "⁠" + b.isbn : k === "motscles" ? tagsOf(b).join(", ") : k === "contenu" ? contenuOf(b).join(" | ") : b[k])).join(";")));
+  list.forEach(b => lines.push(CSV_COLS.map(([k]) => cell(k === "cat" ? (CATS[b.cat]?.label || b.cat) : k === "statut" ? (STATUTS[b.statut] || b.statut) : k === "isbn" && b.isbn ? "⁠" + b.isbn : k === "motscles" ? tagsOf(b).join(", ") : k === "contenu" ? contenuOf(b).join(" | ") : asText(k, b[k]))).join(";")));
   return "﻿" + lines.join("\r\n");
 }
 function parseCsv(text) {
