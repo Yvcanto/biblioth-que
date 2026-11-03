@@ -144,6 +144,9 @@ select.sel{padding:10px 12px;border:1px solid var(--line);border-radius:8px;back
 .g-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding-bottom:4px}
 .g-head h3{font-size:21px}
 .g-meta{font-size:13px;color:var(--muted)}
+.harm{flex-basis:100%;display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:13.5px}
+.harm .tagcloud button .n{margin-left:4px}
+.harm-actions{display:flex;gap:8px;flex-wrap:wrap}
 .g-missing{font-size:12.5px;color:var(--warn)}
 .tome{font-family:var(--f-mono);font-size:12px;color:var(--muted);min-width:52px;text-align:right}
 .place-code{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);min-width:58px;text-align:right;line-height:1.3}
@@ -182,6 +185,8 @@ label textarea{min-height:72px;resize:vertical}
 .pw input{padding-right:46px !important;font-family:var(--f-mono);font-size:14px !important}
 .pw-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);cursor:pointer;padding:8px;border-radius:6px;display:flex}
 .pw-eye:hover{color:var(--ink)}
+.check{flex-direction:row;align-items:flex-start;gap:8px;font-size:13.5px;color:var(--ink);cursor:pointer;background:var(--accent-soft);padding:8px 10px;border-radius:7px}
+.check input{width:auto;margin-top:2px;accent-color:var(--accent)}
 .linkbtn{border:0;background:none;padding:2px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-size:inherit}
 .choice{display:flex;flex-wrap:wrap;gap:6px}
 .choice button{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:14px;display:inline-flex;align-items:center;gap:8px}
@@ -293,7 +298,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 26 · 3 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 27 · 3 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -401,6 +406,7 @@ label textarea{min-height:72px;resize:vertical}
         <input id="f-tag" list="dl-tags" placeholder="Ajouter un mot-clé…" aria-label="Ajouter un mot-clé" enterkeyhint="done">
       </div>
       <p class="hint">Tapez un mot-clé puis Entrée (ou une virgule). Exemples : Égypte, chats, Seconde Guerre mondiale, huis clos, dédicacé.</p>
+      <label class="check" id="tags-prop-wrap" hidden><input type="checkbox" id="tags-prop" checked> <span id="tags-prop-text"></span></label>
     </fieldset>
 
     <fieldset>
@@ -944,6 +950,38 @@ function lieuText(b, court) {
 }
 const shelfNum = v => { const n = parseFloat(String(v || "").replace(",", ".")); return isNaN(n) ? 1e9 : n; };
 /* ---- Mots-clés ---- */
+// Vue « Par série » : compléter les mots-clés des livres d'une série qui ne les ont pas
+let harm = null; // { serie, sel: Set(norm) }
+function serieTagStats(serie) {
+  const all = books.filter(b => norm(b.serie) === norm(serie)), m = new Map();
+  all.forEach(b => tagsOf(b).forEach(t => { const k = norm(t); const e = m.get(k) || { v: t, n: 0 }; e.n++; m.set(k, e); }));
+  return { total: all.length, tags: [...m.values()].sort((a, b) => b.n - a.n || cmpTxt(a.v, b.v)) };
+}
+function harmonizeHtml(serie) {
+  const st = serieTagStats(serie);
+  if (st.total < 2 || !st.tags.some(t => t.n < st.total)) return "";
+  if (!harm || norm(harm.serie) !== norm(serie)) return `<button type="button" class="linkbtn" data-harm-open="${esc(serie)}">Compléter les mots-clés</button>`;
+  return `<div class="harm">
+    <span>Choisissez les mots-clés à ajouter aux livres de la série qui ne les ont pas encore (le chiffre indique combien de livres les ont déjà) :</span>
+    <div class="tagcloud">${st.tags.filter(t => t.n < st.total).map(t => `<button type="button" data-harm-tag="${esc(norm(t.v))}" aria-pressed="${harm.sel.has(norm(t.v))}">${esc(t.v)}<span class="n">${t.n}/${st.total}</span></button>`).join("")}</div>
+    <div class="harm-actions"><button type="button" class="btn small primary" data-harm-apply>Ajouter</button><button type="button" class="btn small" data-harm-cancel>Annuler</button></div>
+  </div>`;
+}
+async function applyHarmonize() {
+  const serie = harm.serie, st = serieTagStats(serie);
+  const add = st.tags.filter(t => harm.sel.has(norm(t.v))).map(t => t.v);
+  harm = null;
+  if (!add.length) { render(); return; }
+  let n = 0;
+  const op = list => list.map(x => {
+    if (norm(x.serie) !== norm(serie)) return x;
+    const mine = tagsOf(x), manque = add.filter(t => !mine.some(m => norm(m) === norm(t)));
+    if (!manque.length) return x;
+    return Object.assign({}, x, { motscles: mine.concat(manque), modifie: Date.now() });
+  });
+  books.forEach(x => { if (norm(x.serie) === norm(serie) && add.some(t => !tagsOf(x).some(m => norm(m) === norm(t)))) n++; });
+  if (await mutate(op, `Mots-clés complétés : ${serie}`)) toast(`Mots-clés ajoutés à ${n} livre${n > 1 ? "s" : ""} de la série`);
+}
 const tagsOf = b => Array.isArray(b.motscles) ? b.motscles : String(b.motscles || "").split(/\s*[,;]\s*/).filter(Boolean);
 function allTags() { // [{v, n}] avec l'orthographe la plus utilisée
   const m = new Map();
@@ -1042,7 +1080,8 @@ function render() {
       return `<section class="group">
         <div class="g-head"><h3>${esc(g[0].serie)}</h3>
           <span class="g-meta">${cat ? cat.label + " · " : ""}${g.length} livre${g.length > 1 ? "s" : ""} · ${lus} lu${lus > 1 ? "s" : ""}</span>
-          ${manque ? `<span class="g-missing">${manque}</span>` : ""}</div>
+          ${manque ? `<span class="g-missing">${manque}</span>` : ""}
+          ${harmonizeHtml(g[0].serie)}</div>
         <div class="list">${g.map(b => rowHtml(b, true)).join("")}</div>
       </section>`;
     }).join("") + (sorted.length && hors ? `<p class="hint">${hors} livre${hors > 1 ? "s" : ""} sans série ne figure${hors > 1 ? "nt" : ""} pas dans cette vue.</p>` : "");
@@ -1099,6 +1138,24 @@ function setCat(c) {
 }
 function renderTagChips() {
   $("#tags-chips").innerHTML = form.mots.map((t, i) => `<span class="tag">${esc(t)}<button type="button" data-i="${i}" aria-label="Retirer ${esc(t)}">×</button></span>`).join("");
+  updateTagPropagation();
+}
+// Mots-clés ajoutés à ce livre et absents d'autres livres de la même série → proposer de les y ajouter
+function tagPropagation() {
+  const s = norm($("#f-serie").value);
+  if (!s) return null;
+  const others = books.filter(b => norm(b.serie) === s && (!editing || b.id !== editing.id));
+  const orig = new Set((form.motsOrig || []).map(norm));
+  const nouveaux = form.mots.filter(t => !orig.has(norm(t)));
+  const manque = nouveaux.filter(t => others.some(b => !tagsOf(b).some(x => norm(x) === norm(t))));
+  if (!manque.length) return null;
+  const n = others.filter(b => manque.some(t => !tagsOf(b).some(x => norm(x) === norm(t)))).length;
+  return { tags: manque, n, serie: others[0].serie };
+}
+function updateTagPropagation() {
+  const p = tagPropagation();
+  $("#tags-prop-wrap").hidden = !p;
+  if (p) $("#tags-prop-text").textContent = `Ajouter aussi ${p.tags.length > 1 ? "les mots-clés" : "le mot-clé"} « ${p.tags.join(", ")} » ${p.n > 1 ? `aux ${p.n} autres livres` : "à l'autre livre"} de la série « ${p.serie} »`;
 }
 function addTags(text) {
   String(text || "").split(/\s*[,;]\s*/).map(t => t.trim()).filter(Boolean).forEach(t => {
@@ -1139,7 +1196,7 @@ function hint(id, cls, text) { const h = $(id); h.className = "hint" + (cls ? " 
 function openPanel(b) {
   editing = b;
   $("#p-title").textContent = b ? "Modifier le livre" : "Ajouter un livre";
-  filledByLookup = null; applySeriePrefill.got = null;
+  filledByLookup = null; applySeriePrefill.got = null; applySeriePrefill.tags = null;
   if (b) ensureParts(b);
   FIELDS.forEach(k => $("#f-" + k).value = b ? (b[k] || "") : "");
   delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true;
@@ -1148,7 +1205,8 @@ function openPanel(b) {
   if (b && b.titreAuto) $("#f-titre").value = "";
   $("#titre-hint").hidden = !$("#f-contenu").value;
   $("#contenu-wrap").hidden = !$("#f-contenu").value; $("#contenu-toggle").hidden = !!$("#f-contenu").value;
-  form.mots = b ? tagsOf(b).slice() : []; $("#f-tag").value = ""; renderTagChips();
+  form.mots = b ? tagsOf(b).slice() : []; form.motsOrig = form.mots.slice(); $("#tags-prop").checked = true;
+  $("#f-tag").value = ""; renderTagChips();
   fillPlaceDl();
   setCat(b ? b.cat || "" : (CATS[prefs.cat] ? prefs.cat : ""));
   form.catAuto = !b || !b.cat; form.catFromIsbn = false; $("#cat-hint").hidden = true;
@@ -1229,11 +1287,20 @@ function applySeriePrefill() {
   // Champs repris du dernier tome (le message reste juste même si l'événement se déclenche deux fois)
   ["auteur", "dessinateur", "editeur", "format", "genre", "piece", "meuble", "etagere", "rang"].forEach(k => { if (fillEmpty(k, last[k]) || (last[k] && $("#f-" + k).value === last[k] && applySeriePrefill.got && applySeriePrefill.got.includes(k))) got.push(k); });
   applySeriePrefill.got = got;
+  // Mots-clés de la série : ceux présents sur au moins la moitié des livres de la série
+  const tc = new Map();
+  same.forEach(b => tagsOf(b).forEach(t => { const k = norm(t); const e = tc.get(k) || { v: t, n: 0 }; e.n++; tc.set(k, e); }));
+  const serieTags = [...tc.values()].filter(e => e.n * 2 >= same.length).map(e => e.v);
+  const ajoutes = serieTags.filter(t => !form.mots.some(m => norm(m) === norm(t)));
+  if (ajoutes.length) { form.mots.push(...ajoutes); form.motsOrig = (form.motsOrig || []).concat(ajoutes); }
+  if (ajoutes.length || (applySeriePrefill.tags && applySeriePrefill.tags.length && serieTags.length)) got.push("motscles");
+  applySeriePrefill.tags = ajoutes.length ? ajoutes : (applySeriePrefill.tags || []);
+  renderTagChips();
   // Le numéro de tome n'est jamais rempli automatiquement : on rappelle seulement ceux déjà saisis
   const tomes = [...new Set(same.flatMap(tomesOf))].sort((a, b) => a - b);
   $("#f-serie").value = same[0].serie; // même orthographe que les autres tomes
   applyAuthorGenre();
-  hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série` + (tomes.length ? ` (tome${tomes.length > 1 ? "s" : ""} ${tomes.length > 15 ? tomes.slice(0, 15).join(", ") + "…" : tomes.join(", ")})` : "") + "." + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", piece: "pièce", meuble: "meuble", etagere: "étagère", rang: "rang" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
+  hint("#serie-hint", "ok", `${same.length} livre${same.length > 1 ? "s" : ""} déjà dans cette série` + (tomes.length ? ` (tome${tomes.length > 1 ? "s" : ""} ${tomes.length > 15 ? tomes.slice(0, 15).join(", ") + "…" : tomes.join(", ")})` : "") + "." + (got.length ? ` Repris du tome ${last.tome || "précédent"} : ${got.map(k => ({ auteur: form.cat === "bd" ? "scénariste" : "auteur", dessinateur: "dessinateur", editeur: "éditeur", format: "format", genre: "genre", piece: "pièce", meuble: "meuble", etagere: "étagère", rang: "rang", motscles: "mots-clés" })[k]).join(", ")}. Corrigez si le dessinateur a changé.` : ""));
 }
 
 async function doLookup() {
@@ -1288,6 +1355,7 @@ async function save() {
   b.lieu = lieuText(b);
   addTags($("#f-tag").value); $("#f-tag").value = ""; // mot-clé tapé mais pas encore validé
   b.motscles = form.mots.slice();
+  const prop = !$("#tags-prop-wrap").hidden && $("#tags-prop").checked ? tagPropagation() : null;
   b.contenu = contenu;
   b.titre = titre; b.titreAuto = !titreSaisi;
   b.cat = form.cat; b.statut = form.statut; b.note = form.note;
@@ -1308,7 +1376,22 @@ async function save() {
   if (!b.pretA) b.pretLe = "";
   b.modifie = Date.now();
   const was = !!editing; closePanels();
-  const ok = await mutate(upsert(b), (was ? "Modifie : " : "Ajoute : ") + b.titre);
+  let op = upsert(b), msg = (was ? "Modifie : " : "Ajoute : ") + b.titre, propN = 0;
+  if (prop && b.serie) {
+    const add = prop.tags;
+    op = list => {
+      list = upsert(b)(list);
+      return list.map(x => {
+        if (x.id === b.id || norm(x.serie) !== norm(b.serie)) return x;
+        const mine = tagsOf(x), manque = add.filter(t => !mine.some(m => norm(m) === norm(t)));
+        if (!manque.length) return x;
+        return Object.assign({}, x, { motscles: mine.concat(manque), modifie: Date.now() });
+      });
+    };
+    propN = prop.n; msg += ` (+ mots-clés sur ${prop.n} livre(s) de la série)`;
+  }
+  const ok = await mutate(op, msg);
+  if (ok && propN) { toast(`${was ? "Livre modifié" : "Livre ajouté"}, mots-clés ajoutés à ${propN} autre${propN > 1 ? "s" : ""} livre${propN > 1 ? "s" : ""} de la série`); return; }
   if (ok) toast(was ? "Livre modifié" : "Livre ajouté");
 }
 function askDelete() {
@@ -1630,6 +1713,7 @@ $("#cover-url-ok").onclick = () => {
 $("#form").addEventListener("submit", e => { e.preventDefault(); save(); });
 $("#f-isbn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doLookup(); } });
 $("#f-serie").addEventListener("change", applySeriePrefill);
+$("#f-serie").addEventListener("input", updateTagPropagation);
 $("#f-auteur").addEventListener("change", () => { applyAuthorCat(); applyAuthorGenre(); });
 $("#f-genre").addEventListener("change", () => { if (!form.cat) applyAuthorCat(); });
 $("#f-genre").addEventListener("input", () => { delete $("#f-genre").dataset.auto; $("#genre-hint").hidden = true; fillGenres(); });
@@ -1644,6 +1728,13 @@ document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (
 $("#f-cat").onclick = e => { const b = e.target.closest("button"); if (b) { setCat(b.dataset.v); form.catAuto = false; form.catFromIsbn = false; $("#cat-hint").hidden = true; } };
 $("#f-statut").onclick = e => { const b = e.target.closest("button"); if (b) setStatut(b.dataset.v); };
 $("#f-note").onclick = e => { const b = e.target.closest("button"); if (b) { const n = +b.dataset.n; setNote(n === form.note ? 0 : n); } };
+$("#list").addEventListener("click", e => {
+  const o = e.target.closest("[data-harm-open]"), t = e.target.closest("[data-harm-tag]");
+  if (o) { const st = serieTagStats(o.dataset.harmOpen); harm = { serie: o.dataset.harmOpen, sel: new Set(st.tags.filter(x => x.n < st.total && x.n * 2 >= st.total).map(x => norm(x.v))) }; render(); }
+  else if (t) { const k = t.dataset.harmTag; if (harm.sel.has(k)) harm.sel.delete(k); else harm.sel.add(k); render(); }
+  else if (e.target.closest("[data-harm-apply]")) applyHarmonize();
+  else if (e.target.closest("[data-harm-cancel]")) { harm = null; render(); }
+});
 $("#list").onclick = e => { const r = e.target.closest(".row"); if (r) { const b = books.find(x => x.id === r.dataset.id); if (b) openPanel(b); } };
 $("#cat-tabs").onclick = e => { const t = e.target.closest(".tab"); if (t) { prefs.cat = t.dataset.c; savePrefs(); render(); } };
 $("#f-stat").onchange = e => { prefs.stat = e.target.value; savePrefs(); render(); };
