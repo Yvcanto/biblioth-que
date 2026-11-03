@@ -289,7 +289,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 24 · 2 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 25 · 3 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -1437,12 +1437,31 @@ $("#ocr-shot").onclick = () => {
   if (camMode === "cover") { const v = $("#ocr-video"); if (!v.videoWidth) { toast("La caméra n'était pas prête. Réessayez."); return; } const d = imageToJpeg(v, v.videoWidth, v.videoHeight); stopOcrCam(); setCover(d); return; } const frames = grabOcrFrames(); stopOcrCam(); if (frames) { if (navigator.vibrate) navigator.vibrate(30); readIsbnPhoto(null, frames); } else hint("#lookup-hint", "warn", "La caméra n'était pas prête. Réessayez."); };
 $("#ocr-file").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) readIsbnPhoto(f); };
 
-/* ================= Scanner (Chrome Android, Edge…) ================= */
+/* ================= Scanner de code-barres (tous navigateurs) ================= */
+// Chrome Android sait lire les codes-barres tout seul. Pour les autres (Firefox, Safari/iPhone…),
+// on charge un lecteur de remplacement à la première utilisation, puis il reste en cache.
+const BARCODE_URL = "https://cdn.jsdelivr.net/npm/barcode-detector@3.2.2/dist/iife/ponyfill.js";
+let barcodeLoad = null;
+async function getBarcodeDetector() {
+  if ("BarcodeDetector" in window) {
+    try { const f = await window.BarcodeDetector.getSupportedFormats(); if (f.includes("ean_13")) return new window.BarcodeDetector({ formats: ["ean_13"] }); } catch (e) {}
+  }
+  if (!barcodeLoad) barcodeLoad = new Promise((res, rej) => {
+    const sc = document.createElement("script"); sc.src = BARCODE_URL;
+    sc.onload = () => window.BarcodeDetectionAPI ? res(window.BarcodeDetectionAPI) : rej(new Error("load"));
+    sc.onerror = () => { barcodeLoad = null; rej(new Error("load")); };
+    document.head.appendChild(sc);
+  });
+  const api = await barcodeLoad;
+  return new api.BarcodeDetector({ formats: ["ean_13"] });
+}
 let scanStream = null, scanTimer = null;
 async function startScan() {
+  let det;
+  try { det = await getBarcodeDetector(); }
+  catch (e) { toast("Le lecteur de code-barres n'a pas pu se charger. Vérifiez votre connexion, ou utilisez « Photo du numéro »."); return; }
   try {
-    const det = new BarcodeDetector({ formats: ["ean_13"] });
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } });
     const v = $("#video"); v.srcObject = scanStream; await v.play();
     $("#scanner").hidden = false;
     const tick = async () => {
@@ -1454,7 +1473,7 @@ async function startScan() {
   } catch (e) { stopScan(); toast("Caméra inaccessible : autorisez-la dans votre navigateur, ou saisissez l'ISBN à la main."); }
 }
 function stopScan() { clearTimeout(scanTimer); if (scanStream) scanStream.getTracks().forEach(t => t.stop()); scanStream = null; $("#scanner").hidden = true; }
-$("#scan").hidden = !("BarcodeDetector" in window && navigator.mediaDevices);
+$("#scan").hidden = !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
 /* ================= Réglages ================= */
 function openSettings() {
