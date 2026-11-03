@@ -298,7 +298,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 27 · 3 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 28 · 3 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -962,7 +962,7 @@ function harmonizeHtml(serie) {
   if (st.total < 2 || !st.tags.some(t => t.n < st.total)) return "";
   if (!harm || norm(harm.serie) !== norm(serie)) return `<button type="button" class="linkbtn" data-harm-open="${esc(serie)}">Compléter les mots-clés</button>`;
   return `<div class="harm">
-    <span>Choisissez les mots-clés à ajouter aux livres de la série qui ne les ont pas encore (le chiffre indique combien de livres les ont déjà) :</span>
+    <span>Mots-clés à ajouter aux livres de la série qui ne les ont pas encore (le chiffre indique combien de livres les ont déjà). Touchez-en un pour le désélectionner :</span>
     <div class="tagcloud">${st.tags.filter(t => t.n < st.total).map(t => `<button type="button" data-harm-tag="${esc(norm(t.v))}" aria-pressed="${harm.sel.has(norm(t.v))}">${esc(t.v)}<span class="n">${t.n}/${st.total}</span></button>`).join("")}</div>
     <div class="harm-actions"><button type="button" class="btn small primary" data-harm-apply>Ajouter</button><button type="button" class="btn small" data-harm-cancel>Annuler</button></div>
   </div>`;
@@ -1287,10 +1287,10 @@ function applySeriePrefill() {
   // Champs repris du dernier tome (le message reste juste même si l'événement se déclenche deux fois)
   ["auteur", "dessinateur", "editeur", "format", "genre", "piece", "meuble", "etagere", "rang"].forEach(k => { if (fillEmpty(k, last[k]) || (last[k] && $("#f-" + k).value === last[k] && applySeriePrefill.got && applySeriePrefill.got.includes(k))) got.push(k); });
   applySeriePrefill.got = got;
-  // Mots-clés de la série : ceux présents sur au moins la moitié des livres de la série
+  // Mots-clés de la série : tous ceux présents sur au moins un livre de la série (à retirer avec × si besoin)
   const tc = new Map();
   same.forEach(b => tagsOf(b).forEach(t => { const k = norm(t); const e = tc.get(k) || { v: t, n: 0 }; e.n++; tc.set(k, e); }));
-  const serieTags = [...tc.values()].filter(e => e.n * 2 >= same.length).map(e => e.v);
+  const serieTags = [...tc.values()].map(e => e.v);
   const ajoutes = serieTags.filter(t => !form.mots.some(m => norm(m) === norm(t)));
   if (ajoutes.length) { form.mots.push(...ajoutes); form.motsOrig = (form.motsOrig || []).concat(ajoutes); }
   if (ajoutes.length || (applySeriePrefill.tags && applySeriePrefill.tags.length && serieTags.length)) got.push("motscles");
@@ -1730,7 +1730,7 @@ $("#f-statut").onclick = e => { const b = e.target.closest("button"); if (b) set
 $("#f-note").onclick = e => { const b = e.target.closest("button"); if (b) { const n = +b.dataset.n; setNote(n === form.note ? 0 : n); } };
 $("#list").addEventListener("click", e => {
   const o = e.target.closest("[data-harm-open]"), t = e.target.closest("[data-harm-tag]");
-  if (o) { const st = serieTagStats(o.dataset.harmOpen); harm = { serie: o.dataset.harmOpen, sel: new Set(st.tags.filter(x => x.n < st.total && x.n * 2 >= st.total).map(x => norm(x.v))) }; render(); }
+  if (o) { const st = serieTagStats(o.dataset.harmOpen); harm = { serie: o.dataset.harmOpen, sel: new Set(st.tags.filter(x => x.n < st.total).map(x => norm(x.v))) }; render(); }
   else if (t) { const k = t.dataset.harmTag; if (harm.sel.has(k)) harm.sel.delete(k); else harm.sel.add(k); render(); }
   else if (e.target.closest("[data-harm-apply]")) applyHarmonize();
   else if (e.target.closest("[data-harm-cancel]")) { harm = null; render(); }
