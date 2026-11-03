@@ -178,6 +178,10 @@ label textarea{min-height:72px;resize:vertical}
 .cover-box img{width:100%;height:100%;object-fit:cover;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .cover-empty{font-size:11px;color:var(--muted);text-align:center;padding:4px}
 .cover-actions{display:flex;flex-wrap:wrap;gap:6px}
+.pw{position:relative;display:block}
+.pw input{padding-right:46px !important;font-family:var(--f-mono);font-size:14px !important}
+.pw-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);cursor:pointer;padding:8px;border-radius:6px;display:flex}
+.pw-eye:hover{color:var(--ink)}
 .linkbtn{border:0;background:none;padding:2px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-size:inherit}
 .choice{display:flex;flex-wrap:wrap;gap:6px}
 .choice button{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:14px;display:inline-flex;align-items:center;gap:8px}
@@ -289,7 +293,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 25 · 3 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 26 · 3 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -451,7 +455,16 @@ label textarea{min-height:72px;resize:vertical}
         <label for="s-owner">Nom d'utilisateur GitHub<input id="s-owner" autocapitalize="off" spellcheck="false"></label>
         <label for="s-repo">Dépôt privé des données<input id="s-repo" value="bibliotheque-donnees" autocapitalize="off" spellcheck="false"></label>
       </div>
-      <label for="s-token">Jeton d'accès (fine-grained token)<input id="s-token" type="password" autocapitalize="off" spellcheck="false" placeholder="github_pat_…"></label>
+      <label for="s-token">Jeton d'accès (fine-grained token)
+        <span class="pw">
+          <input id="s-token" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="github_pat_…">
+          <button type="button" class="pw-eye" id="s-eye" aria-label="Afficher le jeton" aria-pressed="false">
+            <svg class="eye-open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="eye-closed" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" hidden><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.8-1.3"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+          </button>
+        </span>
+      </label>
+      <p class="hint" id="s-token-check" hidden></p>
       <p class="hint">Le jeton reste uniquement dans ce navigateur. Créez-le avec l'accès au seul dépôt de données, permission « Contents : Read and write ».</p>
       <p class="hint" id="s-hint"></p>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -1479,6 +1492,7 @@ $("#scan").hidden = !(navigator.mediaDevices && navigator.mediaDevices.getUserMe
 function openSettings() {
   $("#s-owner").value = cfg ? cfg.owner : ""; $("#s-repo").value = cfg ? cfg.repo : "bibliotheque-donnees"; $("#s-token").value = cfg ? cfg.token : "";
   $("#s-disconnect").hidden = !cfg; $("#s-connect").textContent = cfg ? "Mettre à jour" : "Connecter";
+  $("#s-token").type = "password"; $("#s-eye").setAttribute("aria-pressed", "false"); $("#s-eye .eye-open").toggleAttribute("hidden", false); $("#s-eye .eye-closed").toggleAttribute("hidden", true); $("#s-token-check").hidden = true;
   hint("#s-hint", "", ""); hint("#x-hint", "", "");
   $("#s-status").innerHTML = cfg ? `Connecté au dépôt <b>${esc(cfg.owner)}/${esc(cfg.repo)}</b>. Chaque modification y est enregistrée, avec son historique.` : "Pour l'instant, vos livres sont enregistrés dans ce navigateur seulement. Connectez votre dépôt GitHub privé pour les retrouver sur tous vos appareils.";
   $("#scrim").hidden = false; $("#settings").hidden = false;
@@ -1659,7 +1673,23 @@ $("#x-tags").onclick = e => {
   if (i >= 0) prefs.f.mots.splice(i, 1); else prefs.f.mots.push(v);
   savePrefs(); render();
 };
-$("#open-settings").onclick = openSettings; $("#s-connect").onclick = connect; $("#s-disconnect").onclick = disconnect;
+$("#open-settings").onclick = openSettings;
+// Œil : afficher / masquer le jeton pour le vérifier
+$("#s-eye").onclick = () => {
+  const i = $("#s-token"), show = i.type === "password";
+  i.type = show ? "text" : "password";
+  $("#s-eye").setAttribute("aria-pressed", show); $("#s-eye").setAttribute("aria-label", show ? "Masquer le jeton" : "Afficher le jeton");
+  $("#s-eye .eye-open").toggleAttribute("hidden", show); $("#s-eye .eye-closed").toggleAttribute("hidden", !show); // (les SVG n'ont pas la propriété .hidden)
+};
+// Vérification simple de la forme du jeton (erreurs de copie fréquentes)
+$("#s-token").addEventListener("input", () => {
+  const raw = $("#s-token").value, t = raw.trim(), h = $("#s-token-check");
+  let msg = "";
+  if (t && !/^(github_pat_|ghp_)/.test(t)) msg = "Un jeton commence par « github_pat_ ». Vérifiez que vous l'avez copié en entier, depuis le début.";
+  else if (/\s/.test(t)) msg = "Le jeton contient un espace ou un retour à la ligne : il a sans doute été mal copié.";
+  else if (/^github_pat_/.test(t) && t.length < 80) msg = `Le jeton semble incomplet (${t.length} caractères ; il en fait normalement plus de 90).`;
+  h.hidden = !msg; h.className = "hint warn"; h.textContent = msg;
+}); $("#s-connect").onclick = connect; $("#s-disconnect").onclick = disconnect;
 $("#refresh").onclick = () => pull(false);
 $("#x-csv").onclick = () => { download(`bibliotheque-${today()}.csv`, toCsv(books.slice().sort(sorter("serie"))), "text/csv;charset=utf-8"); hint("#x-hint", "ok", `${books.length} livre(s) exportés.`); };
 $("#x-json").onclick = () => { download(`bibliotheque-${today()}.json`, JSON.stringify({ format: "ma-bibliotheque", version: 1, livres: books }, null, 1), "application/json"); hint("#x-hint", "ok", `${books.length} livre(s) exportés.`); };
