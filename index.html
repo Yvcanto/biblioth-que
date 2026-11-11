@@ -186,6 +186,20 @@ label textarea{min-height:72px;resize:vertical}
 .pw-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);cursor:pointer;padding:8px;border-radius:6px;display:flex}
 .pw-eye:hover{color:var(--ink)}
 .check{flex-direction:row;align-items:flex-start;gap:8px;font-size:13.5px;color:var(--ink);cursor:pointer;background:var(--accent-soft);padding:8px 10px;border-radius:7px}
+.check.plain{background:none;padding:0}
+.panel.wide{width:min(680px,100%)}
+.r-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 0}
+.r-bar .r-count{font-size:13px;color:var(--muted)}
+.r-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.r-item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px;color:var(--ink)}
+.r-item:hover{background:var(--card)}
+.r-item input{width:20px;height:20px;margin-top:2px;accent-color:var(--accent)}
+.r-item .t{font-family:var(--f-display);font-size:16px;font-weight:500;line-height:1.25;overflow-wrap:anywhere}
+.r-item .m{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.r-item .where{font-family:var(--f-mono);font-size:11.5px;color:var(--warn)}
+.r-item .where.same{color:var(--accent)}
+.r-here-item{display:flex;gap:10px;align-items:baseline;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:14px}
+.r-here-item span{min-width:0;overflow-wrap:anywhere}
 .check input{width:auto;margin-top:2px;accent-color:var(--accent)}
 .linkbtn{border:0;background:none;padding:2px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-size:inherit}
 .choice{display:flex;flex-wrap:wrap;gap:6px}
@@ -249,6 +263,7 @@ label textarea{min-height:72px;resize:vertical}
       <input id="q" type="search" placeholder="Titre, auteur, série, ISBN, emplacement…" aria-label="Rechercher" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false" autocomplete="off">
       <ul class="sugg" id="sugg" role="listbox" hidden></ul>
     </div>
+    <button class="btn" id="open-rangement">Ranger des livres</button>
     <button class="btn primary" id="add">+ Ajouter un livre</button>
   </div>
 
@@ -298,7 +313,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 29 · 3 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 30 · 11 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -444,6 +459,43 @@ label textarea{min-height:72px;resize:vertical}
       <button class="btn" id="cancel" type="button">Annuler</button>
       <button class="btn primary" id="save" type="button">Enregistrer</button>
     </div>
+  </div>
+</aside>
+
+<!-- Panneau rangement : un emplacement, plusieurs recherches, plusieurs livres cochés -->
+<aside class="panel wide" id="rangement" hidden role="dialog" aria-modal="true" aria-labelledby="r-title">
+  <div class="p-head">
+    <h2 id="r-title">Ranger des livres</h2>
+    <button class="btn ghost" id="r-close" aria-label="Fermer">✕</button>
+  </div>
+  <div class="p-body">
+    <fieldset>
+      <legend>1 · L'emplacement</legend>
+      <div class="grid2">
+        <label for="r-piece">Pièce<input id="r-piece" list="dl-r-pieces" placeholder="Salon"></label>
+        <label for="r-meuble">Meuble<input id="r-meuble" list="dl-r-meubles" placeholder="Bibliothèque blanche"></label>
+      </div>
+      <div class="grid2">
+        <label for="r-etagere">Étagère<input id="r-etagere" list="dl-r-etageres" placeholder="3"></label>
+        <label for="r-rang">Rang
+          <select id="r-rang"><option value="">Non précisé</option><option value="1">1 (devant)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+        </label>
+      </div>
+      <p class="hint">Les livres cochés reçoivent cet emplacement complet : il remplace leur emplacement précédent, et les cases laissées vides sont effacées sur ces livres.</p>
+      <datalist id="dl-r-pieces"></datalist><datalist id="dl-r-meubles"></datalist><datalist id="dl-r-etageres"></datalist>
+    </fieldset>
+
+    <fieldset>
+      <legend>2 · Les livres</legend>
+      <label for="r-q">Chercher par auteur, titre, série ou mot-clé<input id="r-q" type="search" autocomplete="off" placeholder="Thilliez, Walking Dead, Égypte…"></label>
+      <label class="check plain" for="r-sans"><input type="checkbox" id="r-sans"> Seulement les livres qui n'ont pas encore d'emplacement</label>
+      <div id="r-results"></div>
+    </fieldset>
+
+    <fieldset id="r-here-wrap" hidden>
+      <legend id="r-here-title">Déjà à cet emplacement</legend>
+      <div id="r-here"></div>
+    </fieldset>
   </div>
 </aside>
 
@@ -942,6 +994,90 @@ function ensureParts(b) {
   });
   return b;
 }
+/* ================= Rangement en lot ================= */
+const R_FIELDS = ["piece", "meuble", "etagere", "rang"];
+let rSel = new Set();
+function rDest() { const d = {}; R_FIELDS.forEach(k => d[k] = $("#r-" + k).value.trim()); return d; }
+function sameDest(b, d) { return R_FIELDS.every(k => norm(b[k]) === norm(d[k])); }
+function rFillDl() {
+  const p = norm($("#r-piece").value), m = norm($("#r-meuble").value);
+  fillDl("#dl-r-pieces", books.map(b => b.piece));
+  fillDl("#dl-r-meubles", books.filter(b => !p || norm(b.piece) === p).map(b => b.meuble));
+  const et = books.filter(b => (!p || norm(b.piece) === p) && (!m || norm(b.meuble) === m)).map(b => b.etagere);
+  $("#dl-r-etageres").innerHTML = uniq(et).sort((a, b) => shelfNum(a) - shelfNum(b)).map(v => `<option value="${esc(v)}">`).join("");
+}
+function rMatches() {
+  const q = norm($("#r-q").value), sans = $("#r-sans").checked;
+  if (q.length < 2 && !sans) return null;
+  return books.filter(b => {
+    if (sans && lieuText(b)) return false;
+    if (q.length < 2) return true;
+    return norm([b.titre, contenuOf(b).join(" "), b.auteur, b.dessinateur, b.serie, tagsOf(b).join(" ")].join(" ")).includes(q);
+  }).sort((a, b) => cmpTxt(a.auteur, b.auteur) || cmpTxt(a.serie, b.serie) || serieOrder(a, b));
+}
+function rRender() {
+  books.forEach(ensureParts);
+  const d = rDest(), hasDest = R_FIELDS.some(k => d[k]);
+  const list = rMatches(), box = $("#r-results");
+  if (!list) box.innerHTML = `<p class="hint">Tapez au moins 2 lettres pour afficher les livres correspondants.</p>`;
+  else if (!list.length) box.innerHTML = `<p class="hint">Aucun livre ne correspond.</p>`;
+  else {
+    const n = [...rSel].filter(id => list.some(b => b.id === id)).length;
+    const bar = pos => `<div class="r-bar">
+      <span class="r-count">${list.length} livre${list.length > 1 ? "s" : ""} · ${n} coché${n > 1 ? "s" : ""}</span>
+      <span style="display:flex;gap:6px;flex-wrap:wrap">
+        ${pos === "top" ? `<button type="button" class="btn small" data-r-all>${n === list.length ? "Tout décocher" : "Tout cocher"}</button>` : ""}
+        <button type="button" class="btn small primary" data-r-add ${n && hasDest ? "" : "disabled"}>Ajouter à l'emplacement</button>
+      </span></div>`;
+    box.innerHTML = bar("top") + `<div class="r-list">` + list.map(b => {
+      const here = hasDest && sameDest(b, d), where = lieuText(b);
+      const meta = [b.serie && (b.serie + (b.tome ? " · T." + tomeLabel(b) : "")), [b.auteur, b.dessinateur].filter(Boolean).join(" & ")].filter(Boolean).map(esc).join(" — ");
+      return `<label class="r-item"><input type="checkbox" data-r-id="${esc(b.id)}" ${rSel.has(b.id) ? "checked" : ""}>
+        <span><span class="t">${esc(b.titre)}</span><br>${meta ? `<span class="m">${meta}</span><br>` : ""}
+        <span class="where ${here ? "same" : ""}">${here ? "Déjà à cet emplacement" : where ? "Actuellement : " + esc(where) : "Pas encore d'emplacement"}</span></span></label>`;
+    }).join("") + `</div>` + bar("bottom");
+    if (!hasDest) box.insertAdjacentHTML("afterbegin", `<p class="hint warn">Remplissez d'abord au moins une case de l'emplacement.</p>`);
+  }
+  // Livres déjà à cet emplacement
+  const here = hasDest ? books.filter(b => sameDest(b, d)).sort((a, b) => cmpTxt(a.auteur, b.auteur) || cmpTxt(a.serie, b.serie) || serieOrder(a, b)) : [];
+  $("#r-here-wrap").hidden = !here.length;
+  $("#r-here-title").textContent = `Déjà à cet emplacement (${here.length})`;
+  $("#r-here").innerHTML = here.map(b => `<div class="r-here-item"><span>${esc(b.titre)}${b.auteur ? ` <span class="hint">— ${esc(b.auteur)}</span>` : ""}</span><button type="button" class="btn small ghost" data-r-remove="${esc(b.id)}">Retirer</button></div>`).join("");
+}
+function openRangement() {
+  const last = lsGet("biblio-rangement", {});
+  R_FIELDS.forEach(k => $("#r-" + k).value = last[k] || "");
+  $("#r-q").value = ""; rSel = new Set();
+  rFillDl(); rRender();
+  $("#scrim").hidden = false; $("#rangement").hidden = false;
+  setTimeout(() => $("#r-piece").focus(), 60);
+}
+async function rApply() {
+  const d = rDest();
+  // Même orthographe que les emplacements existants
+  ["piece", "meuble"].forEach(k => { const ex = books.find(x => d[k] && norm(x[k]) === norm(d[k])); if (ex) { d[k] = ex[k]; $("#r-" + k).value = ex[k]; } });
+  const ids = new Set([...rSel].filter(id => (rMatches() || []).some(b => b.id === id)));
+  if (!ids.size) return;
+  lsSet("biblio-rangement", d);
+  const now = Date.now();
+  const op = list => list.map(x => {
+    if (!ids.has(x.id)) return x;
+    const y = Object.assign({}, x, d, { modifie: now });
+    y.lieu = lieuText(y);
+    return y;
+  });
+  const lbl = lieuText(d) || "l'emplacement";
+  rSel = new Set();
+  const ok = await mutate(op, `Rangement : ${ids.size} livre(s) → ${lbl}`);
+  rRender();
+  if (ok) toast(`${ids.size} livre${ids.size > 1 ? "s" : ""} rangé${ids.size > 1 ? "s" : ""} : ${lbl}`);
+}
+async function rRemove(id) {
+  const b = books.find(x => x.id === id); if (!b) return;
+  const op = list => list.map(x => x.id === id ? Object.assign({}, x, { piece: "", meuble: "", etagere: "", rang: "", lieu: "", modifie: Date.now() }) : x);
+  if (await mutate(op, "Emplacement retiré : " + b.titre)) toast("Emplacement retiré : " + b.titre);
+  rRender();
+}
 function lieuText(b, court) {
   const e = String(b.etagere || "").trim(), r = String(b.rang || "").trim();
   return [b.piece, b.meuble,
@@ -1217,7 +1353,7 @@ function openPanel(b) {
   $("#scrim").hidden = false; $("#panel").hidden = false; $("#panel .p-body").scrollTop = 0;
   if (!b && matchMedia("(pointer:fine)").matches) setTimeout(() => $("#f-isbn").focus(), 60);
 }
-function closePanels() { $("#scrim").hidden = true; $("#panel").hidden = true; $("#settings").hidden = true; editing = null; stopScan(); stopOcrCam(); }
+function closePanels() { $("#scrim").hidden = true; $("#panel").hidden = true; $("#settings").hidden = true; $("#rangement").hidden = true; editing = null; stopScan(); stopOcrCam(); }
 let filledByLookup = null; // champs remplis par la dernière recherche ISBN, pour pouvoir les effacer
 function fillEmpty(k, v) { const el = $("#f-" + k); if (v && !el.value.trim()) { el.value = v; if (filledByLookup) filledByLookup.push(k); return true; } return false; }
 /* Catégorie : déduite des autres livres du même auteur, sinon du genre */
@@ -1770,6 +1906,18 @@ $("#x-tags").onclick = e => {
   savePrefs(); render();
 };
 $("#open-settings").onclick = openSettings;
+$("#open-rangement").onclick = openRangement;
+$("#r-close").onclick = closePanels;
+R_FIELDS.forEach(k => $("#r-" + k).addEventListener("input", () => { rFillDl(); rRender(); }));
+$("#r-rang").addEventListener("change", rRender);
+$("#r-q").addEventListener("input", rRender);
+$("#r-sans").addEventListener("change", rRender);
+$("#r-results").addEventListener("change", e => { const c = e.target.closest("[data-r-id]"); if (!c) return; if (c.checked) rSel.add(c.dataset.rId); else rSel.delete(c.dataset.rId); rRender(); });
+$("#r-results").addEventListener("click", e => {
+  if (e.target.closest("[data-r-add]")) { rApply(); return; }
+  if (e.target.closest("[data-r-all]")) { const list = rMatches() || []; const all = list.every(b => rSel.has(b.id)); list.forEach(b => all ? rSel.delete(b.id) : rSel.add(b.id)); rRender(); }
+});
+$("#r-here").addEventListener("click", e => { const r = e.target.closest("[data-r-remove]"); if (r) rRemove(r.dataset.rRemove); });
 // Œil : afficher / masquer le jeton pour le vérifier
 $("#s-eye").onclick = () => {
   const i = $("#s-token"), show = i.type === "password";
