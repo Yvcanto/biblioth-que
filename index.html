@@ -159,7 +159,9 @@ select.sel{padding:10px 12px;border:1px solid var(--line);border-radius:8px;back
 .scrim{position:fixed;inset:0;background:rgba(10,15,12,.45);z-index:20}
 .panel{position:fixed;top:0;right:0;bottom:0;width:min(540px,100%);background:var(--paper);z-index:21;box-shadow:var(--shadow);display:flex;flex-direction:column;
   padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
-.p-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.p-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.p-head-actions{display:flex;align-items:center;gap:6px}
+.reset-confirm{flex-basis:100%}
 .p-head h2{font-size:22px}
 .p-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:20px}
 .p-foot{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--line)}
@@ -313,7 +315,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 30 · 11 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 31 · 11 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -321,7 +323,15 @@ label textarea{min-height:72px;resize:vertical}
 <aside class="panel" id="panel" hidden role="dialog" aria-modal="true" aria-labelledby="p-title">
   <div class="p-head">
     <h2 id="p-title">Ajouter un livre</h2>
-    <button class="btn ghost" id="close" aria-label="Fermer">✕</button>
+    <span class="p-head-actions">
+      <button class="btn small" id="reset-place" type="button" hidden>Réinitialiser le rangement</button>
+      <button class="btn ghost" id="close" aria-label="Fermer">✕</button>
+    </span>
+    <div class="confirm reset-confirm" id="reset-confirm" hidden>
+      <span>Effacer l'emplacement de ce livre (pièce, meuble, étagère, rang) et enregistrer la fiche ?</span>
+      <button class="btn danger" type="button" id="reset-yes">Oui, effacer et enregistrer</button>
+      <button class="btn ghost" type="button" id="reset-no">Annuler</button>
+    </div>
   </div>
   <form class="p-body" id="form">
     <fieldset>
@@ -1347,12 +1357,15 @@ function openPanel(b) {
   setCat(b ? b.cat || "" : (CATS[prefs.cat] ? prefs.cat : ""));
   form.catAuto = !b || !b.cat; form.catFromIsbn = false; $("#cat-hint").hidden = true;
   setStatut(b ? b.statut || "alire" : "alire"); setNote(b ? b.note || 0 : 0); setCover(b ? b.couverture : "");
-  $("#del").hidden = !b; $("#confirm").hidden = true;
+  $("#del").hidden = !b; $("#confirm").hidden = true; $("#reset-confirm").hidden = true;
+  updateResetPlace();
   hint("#lookup-hint", "", "Les informations viennent de la BnF, de Google Books et d'Open Library. Vous pouvez tout corriger ensuite.");
   hint("#serie-hint", "", "");
   $("#scrim").hidden = false; $("#panel").hidden = false; $("#panel .p-body").scrollTop = 0;
   if (!b && matchMedia("(pointer:fine)").matches) setTimeout(() => $("#f-isbn").focus(), 60);
 }
+/* Bouton « Réinitialiser le rangement » en haut de la fiche : visible si un emplacement est rempli */
+function updateResetPlace() { $("#reset-place").hidden = !["piece", "meuble", "etagere", "rang"].some(k => $("#f-" + k).value.trim()); }
 function closePanels() { $("#scrim").hidden = true; $("#panel").hidden = true; $("#settings").hidden = true; $("#rangement").hidden = true; editing = null; stopScan(); stopOcrCam(); }
 let filledByLookup = null; // champs remplis par la dernière recherche ISBN, pour pouvoir les effacer
 function fillEmpty(k, v) { const el = $("#f-" + k); if (v && !el.value.trim()) { el.value = v; if (filledByLookup) filledByLookup.push(k); return true; } return false; }
@@ -1865,6 +1878,14 @@ $("#genre-quick").onclick = e => {
   if (!form.cat) applyAuthorCat();
 };
 $("#f-piece").addEventListener("input", fillPlaceDl); $("#f-meuble").addEventListener("input", fillPlaceDl);
+["piece", "meuble", "etagere", "rang"].forEach(k => $("#f-" + k).addEventListener(k === "rang" ? "change" : "input", updateResetPlace));
+$("#reset-place").onclick = () => { $("#reset-confirm").hidden = false; $("#reset-yes").focus(); };
+$("#reset-no").onclick = () => { $("#reset-confirm").hidden = true; };
+$("#reset-yes").onclick = () => {
+  ["piece", "meuble", "etagere", "rang"].forEach(k => $("#f-" + k).value = "");
+  $("#reset-confirm").hidden = true; updateResetPlace();
+  save(); // enregistre aussi toutes les autres modifications de la fiche
+};
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (!$("#ocr-cam").hidden) stopOcrCam(); else if (!$("#scanner").hidden) stopScan(); else closePanels(); });
 $("#f-cat").onclick = e => { const b = e.target.closest("button"); if (b) { setCat(b.dataset.v); form.catAuto = false; form.catFromIsbn = false; $("#cat-hint").hidden = true; } };
 $("#f-statut").onclick = e => { const b = e.target.closest("button"); if (b) setStatut(b.dataset.v); };
