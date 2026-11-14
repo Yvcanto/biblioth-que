@@ -315,7 +315,7 @@ label textarea{min-height:72px;resize:vertical}
   <p class="hint" id="result-count" hidden></p>
   <div id="list"></div>
   <div class="empty" id="empty" hidden></div>
-  <p class="hint" style="text-align:center;margin-top:24px">Version 31 · 11 novembre 2026</p>
+  <p class="hint" style="text-align:center;margin-top:24px">Version 32 · 14 novembre 2026</p>
 </div>
 
 <!-- Panneau livre -->
@@ -351,7 +351,7 @@ label textarea{min-height:72px;resize:vertical}
     <fieldset>
       <legend>Couverture</legend>
       <div class="cover-prev">
-        <span class="cover-box" id="cover-box"><img id="cover-img" alt="" hidden><span class="cover-empty" id="cover-empty">Pas de couverture</span></span>
+        <span class="cover-box" id="cover-box"><img id="cover-img" alt="" referrerpolicy="no-referrer" hidden><span class="cover-empty" id="cover-empty">Pas de couverture</span></span>
         <div class="cover-actions">
           <button type="button" class="btn small" id="cover-cam">Photographier</button>
           <button type="button" class="btn small" id="cover-pick">Choisir une image</button>
@@ -368,6 +368,7 @@ label textarea{min-height:72px;resize:vertical}
         <label for="cover-url">Adresse de l'image (appui long ou clic droit sur l'image → « Copier l'adresse de l'image »)<input id="cover-url" inputmode="url" placeholder="https://…"></label>
         <button type="button" class="btn" id="cover-url-ok">Utiliser</button>
       </div>
+      <p class="hint" id="cover-url-hint" hidden></p>
       <input type="file" id="cover-file" accept="image/*" hidden>
     </fieldset>
 
@@ -1316,6 +1317,8 @@ function setNote(n) { form.note = n; $("#f-note").innerHTML = [1, 2, 3, 4, 5].ma
 function setCover(u) {
   form.couverture = u || "";
   const img = $("#cover-img");
+  $("#cover-empty").textContent = "Pas de couverture";
+  img.onerror = () => { if (form.couverture === u) { img.hidden = true; $("#cover-empty").hidden = false; $("#cover-empty").textContent = "Image indisponible"; } };
   $("#cover-del").hidden = !u; $("#cover-empty").hidden = !!u; img.hidden = !u;
   $("#cover-url-row").hidden = true;
   if (!u) { img.removeAttribute("src"); return; }
@@ -1836,7 +1839,7 @@ $("#tags-box").onclick = e => { if (e.target.id === "tags-box") $("#f-tag").focu
 $("#cover-pick").onclick = () => $("#cover-file").click();
 $("#cover-file").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) coverFromFile(f); };
 $("#cover-cam").onclick = () => startOcrCam("cover");
-$("#cover-url-btn").onclick = () => { $("#cover-url-row").hidden = false; $("#cover-url").value = ""; $("#cover-url").focus(); };
+$("#cover-url-btn").onclick = () => { $("#cover-url-row").hidden = false; $("#cover-url").value = ""; coverUrlHint("", ""); $("#cover-url").focus(); };
 // Ouvre la recherche du livre chez un libraire, dans une fenêtre séparée (toujours la même)
 const WEB_SEARCH = {
   fnac: q => "https://www.fnac.com/SearchResult/ResultList.aspx?Search=" + encodeURIComponent(q),
@@ -1854,16 +1857,45 @@ document.querySelector(".web-search").onclick = e => {
   const win = window.open(url, "biblio-recherche", `popup=yes,width=${w},height=${h},left=${Math.max(0, screen.availWidth - w - 20)},top=20`);
   if (win) { try { win.focus(); } catch (err) {} } else toast("La fenêtre a été bloquée : autorisez les fenêtres pop-up pour ce site.");
   // Prépare le champ pour coller l'adresse de l'image au retour
-  $("#cover-url-row").hidden = false; $("#cover-url").value = "";
+  $("#cover-url-row").hidden = false; $("#cover-url").value = ""; coverUrlHint("", "");
 };
-$("#cover-url-ok").onclick = () => {
-  const u = $("#cover-url").value.trim();
-  if (!/^https?:\/\/\S+$/i.test(u)) { toast("Collez une adresse qui commence par https://"); return; }
+// Adresse d'image collée : on accepte aussi les images « data: » (Google Images) et les liens de redirection
+function cleanImageAddress(raw) {
+  let u = String(raw || "").trim().replace(/^["'<(]+|[">)]+$/g, "");
+  if (/^data:image\//i.test(u)) return u.replace(/\s+/g, "");
+  u = u.replace(/\s+/g, "");
+  if (/^\/\//.test(u)) u = "https:" + u;
+  else if (/^www\./i.test(u)) u = "https://" + u;
+  try { // lien Google du type « …/imgres?imgurl=https://… » ou « …/url?url=https://… »
+    const p = new URL(u), inner = p.searchParams.get("imgurl") || p.searchParams.get("mediaurl") || (/google\./.test(p.hostname) ? p.searchParams.get("url") : null);
+    if (inner && /^https?:\/\//i.test(inner)) u = inner;
+  } catch (e) {}
+  return u.replace(/^http:/i, "https:");
+}
+function coverUrlHint(cls, text) { const h = $("#cover-url-hint"); h.className = "hint" + (cls ? " " + cls : ""); h.textContent = text; h.hidden = !text; }
+function useCoverAddress() {
+  const u = cleanImageAddress($("#cover-url").value);
+  if (!u) { coverUrlHint("err", "Collez d'abord l'adresse de l'image."); return; }
+  if (!/^(https:\/\/\S+|data:image\/)/i.test(u)) { coverUrlHint("err", "Ce n'est pas une adresse d'image. Faites un appui long (ou un clic droit) sur l'image, puis « Copier l'adresse de l'image »."); return; }
+  coverUrlHint("", "Vérification de l'image…");
   const test = new Image(); test.referrerPolicy = "no-referrer";
-  test.onload = () => setCover(u.replace(/^http:/, "https:"));
-  test.onerror = () => toast("Aucune image à cette adresse. Copiez l'adresse de l'image elle-même, pas celle de la page.");
+  let done = false;
+  const fail = msg => { if (done) return; done = true; coverUrlHint("err", msg); };
+  const timer = setTimeout(() => fail("L'image ne répond pas. Réessayez, ou prenez l'image sur un autre site (Decitre, Google Images…)."), 12000);
+  test.onload = () => {
+    if (done) return; done = true; clearTimeout(timer);
+    if (test.naturalWidth < 40 || test.naturalHeight < 40) { coverUrlHint("err", "Cette image est trop petite pour une couverture. Ouvrez l'image en grand avant de copier son adresse."); return; }
+    coverUrlHint("", "");
+    // Image intégrée « data: » (copiée depuis Google Images) : on la convertit en vraie vignette, envoyée dans votre dépôt
+    if (/^data:/i.test(u)) setCover(imageToJpeg(test, test.naturalWidth, test.naturalHeight));
+    else setCover(u);
+  };
+  test.onerror = () => { clearTimeout(timer); fail("Le site refuse d'afficher cette image ailleurs, ou ce n'est pas l'adresse de l'image elle-même. Essayez de la prendre sur un autre site, ou utilisez « Choisir une image » après l'avoir enregistrée."); };
   test.src = u;
-};
+}
+$("#cover-url-ok").onclick = useCoverAddress;
+// Entrée dans le champ d'adresse : utiliser l'image (et surtout ne pas enregistrer la fiche)
+$("#cover-url").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); useCoverAddress(); } });
 $("#form").addEventListener("submit", e => { e.preventDefault(); save(); });
 $("#f-isbn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doLookup(); } });
 $("#f-serie").addEventListener("change", applySeriePrefill);
